@@ -1,9 +1,14 @@
 defmodule Textexp.Document.Writing do
-  use Ash.Resource, otp_app: :textexp, domain: Textexp.Document, data_layer: AshPostgres.DataLayer
+  use Ash.Resource, otp_app: :textexp, domain: Textexp.Document, data_layer: AshSqlite.DataLayer
 
-  postgres do
+  # postgres do
+  #   table "writings"
+  #   repo Textexp.Repo
+  # end
+
+  sqlite do
     table "writings"
-    repo Textexp.Repo
+    repo Textexp.SqliteRepo
   end
 
   actions do

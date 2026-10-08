@@ -2,12 +2,8 @@ import Config
 config :ash, policies: [show_policy_breakdowns?: true]
 
 # Configure your database
-config :textexp, Textexp.Repo,
-  username: System.get_env("DB_USERNAME", "postgres"),
-  password: System.get_env("DB_PASSWORD", "postgres"),
-  hostname: System.get_env("DB_HOST", "localhost"),
-  database: "textexp_dev",
-  stacktrace: true,
+config :textexp, Textexp.SqliteRepo,
+  database: Path.join(__DIR__, "../base.sqlite"),
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 

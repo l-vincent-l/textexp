@@ -41,22 +41,35 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
+  # Bunny Database (libSQL). URL and token are found in the Bunny dashboard,
+  # under Database > Access.
   database_url =
-    System.get_env("DATABASE_URL") ||
+    System.get_env("BUNNY_DATABASE_URL") ||
       raise """
-      environment variable DATABASE_URL is missing.
-      For example: ecto://USER:PASS@HOST/DATABASE
+      environment variable BUNNY_DATABASE_URL is missing.
+      For example: libsql://<database-id>.lite.bunnydb.net
       """
 
-  maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+  database_auth_token =
+    System.get_env("BUNNY_DATABASE_AUTH_TOKEN") ||
+      raise "environment variable BUNNY_DATABASE_AUTH_TOKEN is missing."
 
-  config :textexp, Textexp.Repo,
-    # ssl: true,
-    url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    # For machines with several cores, consider starting multiple pools of `pool_size`
-    # pool_count: 4,
-    socket_options: maybe_ipv6
+  # When DATABASE_PATH is set, a local embedded replica is kept in sync with
+  # Bunny (faster reads, requires persistent storage). Otherwise every query
+  # goes over the network.
+  replica_opts =
+    case System.get_env("DATABASE_PATH") do
+      nil -> []
+      path -> [database: path, sync: true]
+    end
+
+  config :textexp,
+         Textexp.SqliteRepo,
+         [
+           uri: database_url,
+           auth_token: database_auth_token,
+           pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+         ] ++ replica_opts
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

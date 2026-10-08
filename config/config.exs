@@ -26,7 +26,6 @@ config :ash,
   redact_sensitive_values_in_errors?: true,
   default_string_length_count: :codepoints,
   many_to_many_destroy_destination_on_match?: true,
-  known_types: [AshPostgres.Timestamptz, AshPostgres.TimestamptzUsec],
   custom_types: [
     ticket_status: MyApp.Support.Ticket.Types.Status,
     writing_version: Textexp.Document.Writing.Version
@@ -64,7 +63,7 @@ config :spark,
   ]
 
 config :textexp,
-  ecto_repos: [Textexp.Repo],
+  ecto_repos: [Textexp.SqliteRepo],
   generators: [timestamp_type: :utc_datetime],
   ash_domains: [Textexp.Document, Textexp.Accounts],
   ash_authentication: [return_error_on_invalid_magic_link_token?: true]

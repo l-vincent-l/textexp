@@ -12,7 +12,7 @@ defmodule Textexp.Application do
 
     children = [
       TextexpWeb.Telemetry,
-      Textexp.Repo,
+      Textexp.SqliteRepo,
       {DNSCluster, query: Application.get_env(:textexp, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Textexp.PubSub},
       TextexpWeb.Presence,

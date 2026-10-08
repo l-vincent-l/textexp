@@ -1,5 +1,5 @@
 defmodule Textexp.MyYEcto do
-  use Textexp.YEcto, repo: Textexp.Repo, schema: Textexp.Document.Writing
+  use Textexp.YEcto, repo: Textexp.SqliteRepo, schema: Textexp.Document.Writing
 end
 
 defmodule Textexp.EctoPersistence do

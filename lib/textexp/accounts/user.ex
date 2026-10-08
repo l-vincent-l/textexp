@@ -2,9 +2,19 @@ defmodule Textexp.Accounts.User do
   use Ash.Resource,
     otp_app: :textexp,
     domain: Textexp.Accounts,
-    data_layer: AshPostgres.DataLayer,
+    data_layer: AshSqlite.DataLayer,
     authorizers: [Ash.Policy.Authorizer],
     extensions: [AshAuthentication]
+
+  sqlite do
+    table "users"
+    repo Textexp.SqliteRepo
+  end
+
+  # postgres do
+  #   table "tokens"
+  #   repo Textexp.Repo
+  # end
 
   authentication do
     add_ons do
@@ -54,11 +64,6 @@ defmodule Textexp.Accounts.User do
         end
       end
     end
-  end
-
-  postgres do
-    table "users"
-    repo Textexp.Repo
   end
 
   actions do

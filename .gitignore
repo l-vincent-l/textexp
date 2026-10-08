@@ -35,3 +35,8 @@ textexp-*.tar
 npm-debug.log
 /assets/node_modules/
 
+*.sqlite*
+
+/rel/
+
+

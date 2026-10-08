@@ -3,13 +3,13 @@
     :ash_authentication,
     :ash_authentication_phoenix,
     :ash_admin,
-    :ash_postgres,
     :ash_phoenix,
     :ash,
     :reactor,
     :ecto,
     :ecto_sql,
-    :phoenix
+    :phoenix,
+    :ash_sqlite
   ],
   subdirectories: ["priv/*/migrations"],
   plugins: [Spark.Formatter, Phoenix.LiveView.HTMLFormatter],
