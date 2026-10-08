@@ -56,6 +56,11 @@ defmodule TextexpWeb.AuthController do
   def sign_out(conn, _params) do
     return_to = get_session(conn, :return_to) || ~p"/"
 
+    # Close the user's document sockets. Sessions still valid elsewhere reconnect.
+    if user = conn.assigns[:current_user] do
+      TextexpWeb.Endpoint.broadcast("user_socket:#{user.id}", "disconnect", %{})
+    end
+
     conn
     |> clear_session(:textexp)
     |> put_flash(:info, "You are now signed out")

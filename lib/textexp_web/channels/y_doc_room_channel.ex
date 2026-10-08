@@ -5,8 +5,8 @@ defmodule TextexpWeb.YDocRoomChannel do
 
   alias TextexpWeb.DocServer
   @impl true
-  def join("y_doc_room:" <> doc_name = topic, payload, socket) do
-    if authorized?(payload) do
+  def join("y_doc_room:" <> doc_name = topic, _payload, socket) do
+    if authorized?(socket) do
       uid = "#{node()}_#{System.unique_integer()}"
 
       TextexpWeb.Presence.track_user(topic, uid, %{})
@@ -115,8 +115,6 @@ defmodule TextexpWeb.YDocRoomChannel do
     end
   end
 
-  # Add authorization logic here as required.
-  defp authorized?(_payload) do
-    true
-  end
+  # Any signed-in user can join any document.
+  defp authorized?(socket), do: socket.assigns[:current_user] != nil
 end

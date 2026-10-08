@@ -26,8 +26,18 @@ defmodule TextexpWeb.UserSocket do
   # See `Phoenix.Token` documentation for examples in
   # performing token verification on connect.
   @impl true
-  def connect(_params, socket, _connect_info) do
-    {:ok, socket}
+  def connect(_params, socket, connect_info) do
+    session = connect_info[:session] || %{}
+
+    socket =
+      AshAuthentication.Plug.Helpers.assign_new_resources(
+        socket,
+        session,
+        fn socket, key, fun -> assign(socket, key, fun.()) end,
+        otp_app: :textexp
+      )
+
+    if socket.assigns[:current_user], do: {:ok, socket}, else: :error
   end
 
   # Socket IDs are topics that allow you to identify all sockets for a given user:
@@ -41,5 +51,5 @@ defmodule TextexpWeb.UserSocket do
   #
   # Returning `nil` makes this socket anonymous.
   @impl true
-  def id(_socket), do: nil
+  def id(socket), do: "user_socket:#{socket.assigns.current_user.id}"
 end

@@ -12,9 +12,17 @@ import { createRoot } from "react-dom/client";
 import { PhoenixChannelProvider } from "y-phoenix-channel";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Socket } from "phoenix";
-import { generateUsername } from "friendly-username-generator";
 
-const socket = new Socket("/socket");
+const domNode = document.getElementById("root");
+if (!domNode) {
+  throw new Error("root element not found");
+}
+
+// The CSRF token lets Phoenix pass the session (and thus the user) to the socket.
+const csrfToken = document
+  .querySelector("meta[name='csrf-token']")
+  ?.getAttribute("content");
+const socket = new Socket("/socket", { params: { _csrf_token: csrfToken } });
 socket.connect();
 const ydoc = new Y.Doc();
 const docname = `blocknote:${new URLSearchParams(window.location.search).get("docname") ?? "blocknote"}`;
@@ -46,7 +54,7 @@ export default function App() {
       provider,
       fragment: ydoc.getXmlFragment("document-store"),
       user: {
-        name: generateUsername(),
+        name: domNode.dataset.userName ?? "",
         color: myColor,
       },
     },
@@ -56,11 +64,6 @@ export default function App() {
 
   // Renders the editor instance using a React component.
   return <BlockNoteView editor={editor} theme="light" />;
-}
-
-const domNode = document.getElementById("root");
-if (!domNode) {
-  throw new Error("root element not found");
 }
 
 const root = createRoot(domNode);

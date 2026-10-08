@@ -1,7 +1,7 @@
 defmodule TextexpWeb.DocumentLive do
   use TextexpWeb, :live_view
 
-  on_mount {TextexpWeb.LiveUserAuth, :live_user_optional}
+  on_mount {TextexpWeb.LiveUserAuth, :live_user_required}
 
   def render(assigns) do
     ~H"""
@@ -10,7 +10,7 @@ defmodule TextexpWeb.DocumentLive do
       <script defer phx-track-static type="text/javascript" src={~p"/assets/js/blocknote.js"}>
       </script>
       <%!-- React gère ce nœud : LiveView ne doit pas y toucher --%>
-      <div id="root" phx-update="ignore"></div>
+      <div id="root" phx-update="ignore" data-user-name={@current_user.email}></div>
     </Layouts.app>
     """
   end
