@@ -28,7 +28,7 @@ FROM ${BUILDER_IMAGE} AS builder
 
 # install build dependencies
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends build-essential git \
+  && apt-get install -y --no-install-recommends build-essential git nodejs npm \
   && rm -rf /var/lib/apt/lists/*
 
 # prepare build dir
@@ -60,6 +60,10 @@ COPY lib lib
 
 # Compile the release
 RUN mix compile
+
+# install npm dependencies (cached unless package files change)
+COPY assets/package.json assets/package-lock.json assets/
+RUN npm ci --prefix assets
 
 COPY assets assets
 
