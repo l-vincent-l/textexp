@@ -2,6 +2,8 @@ defmodule TextexpWeb.DocumentLive do
   use TextexpWeb, :live_view
 
   alias Textexp.Document
+  alias Textexp.Document.YPersistence
+  alias TextexpWeb.Presence
 
   on_mount {TextexpWeb.LiveUserAuth, :live_user_required}
 
@@ -134,12 +136,25 @@ defmodule TextexpWeb.DocumentLive do
     {:ok,
      socket
      |> assign(document: nil, title_form: nil)
+     |> stream(:viewers, [])
      |> stream(:documents, documents)}
   end
 
   def handle_params(%{"id" => id}, _uri, socket) do
     case Document.get_document(id, load: [:last_update]) do
       {:ok, document} ->
+        if connected?(socket) do
+          Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.topic(document.id))
+
+          user = socket.assigns.current_user
+          Presence.subscribe(viewers_topic(document.id))
+
+          Presence.track_user(viewers_topic(document.id), user.id, %{
+            id: user.id,
+            email: user.email
+          })
+        end
+
         {:noreply,
          assign(socket,
            document: document,
@@ -157,6 +172,21 @@ defmodule TextexpWeb.DocumentLive do
   end
 
   def handle_params(_params, _uri, socket), do: {:noreply, socket}
+
+  def handle_info({Presence, {event, _user}}, socket) when event in [:join, :leave] do
+    {:noreply, stream(socket, :viewers, viewers(socket.assigns.document.id), reset: true)}
+  end
+
+  defp viewers_topic(document_id), do: "viewers:#{document_id}"
+
+  # Un utilisateur avec plusieurs onglets ouverts n'apparaît qu'une fois.
+  defp viewers(document_id) do
+    document_id
+    |> viewers_topic()
+    |> Presence.list_users()
+    |> Enum.map(fn %{metas: [meta | _]} -> meta end)
+    |> Enum.sort_by(& &1.email)
+  end
 
   def handle_event("new_document", _params, socket) do
     document = Document.create_document!(%{}, actor: socket.assigns.current_user)
