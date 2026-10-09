@@ -63,4 +63,20 @@ defmodule Textexp.Document.Document do
 
     has_many :writings, Textexp.Document.Writing
   end
+
+  calculations do
+    # Date du dernier writing ; une fois les writings compactés, celle du
+    # compactage (ou du dernier renommage), portée par `updated_at`.
+    # AshSqlite ne gère pas les aggregates, d'où la sous-requête en fragment ;
+    # `||` y renvoie nil sur des dates, d'où le coalesce SQL.
+    calculate :last_update,
+              :utc_datetime_usec,
+              expr(
+                fragment(
+                  "coalesce((SELECT max(inserted_at) FROM writings WHERE document_id = ?), ?)",
+                  id,
+                  updated_at
+                )
+              )
+  end
 end

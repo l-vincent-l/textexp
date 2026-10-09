@@ -49,6 +49,29 @@ defmodule TextexpWeb.DocumentLive do
                     class="w-full bg-transparent text-4xl font-bold leading-tight outline-none placeholder:text-[#cfcfcf]"
                   />
                 </.form>
+                <div class="mt-1 flex flex-wrap items-center justify-between gap-2">
+                  <p id="last-update" class="text-sm text-[#9b9b9b]">
+                    Dernière mise à jour : {Calendar.strftime(@last_update, "%d/%m/%Y %H:%M:%S")} UTC
+                  </p>
+                  <%!-- Personnes ayant ce document ouvert --%>
+                  <ul id="viewers" class="flex -space-x-2" phx-update="stream">
+                    <li
+                      :for={{id, viewer} <- @streams.viewers}
+                      id={id}
+                      title={viewer.email}
+                      class={[
+                        "flex size-8 items-center justify-center rounded-full text-xs font-semibold uppercase",
+                        "ring-2 ring-white transition-transform duration-150 hover:z-10 hover:-translate-y-0.5",
+                        if(viewer.id == @current_user.id,
+                          do: "bg-[#3f3f3f] text-white",
+                          else: "bg-[#ececec] text-[#3f3f3f]"
+                        )
+                      ]}
+                    >
+                      {String.first(to_string(viewer.email))}
+                    </li>
+                  </ul>
+                </div>
                 <div class="divider"></div>
               </div>
               <%!-- React gère ce nœud : LiveView ne doit pas y toucher --%>
@@ -106,7 +129,7 @@ defmodule TextexpWeb.DocumentLive do
   end
 
   def mount(_params, _session, socket) do
-    documents = Document.list_documents!(query: [sort: [updated_at: :desc]])
+    documents = Document.list_documents!(query: [sort: [last_update: :desc]])
 
     {:ok,
      socket
@@ -115,12 +138,13 @@ defmodule TextexpWeb.DocumentLive do
   end
 
   def handle_params(%{"id" => id}, _uri, socket) do
-    case Document.get_document(id) do
+    case Document.get_document(id, load: [:last_update]) do
       {:ok, document} ->
         {:noreply,
          assign(socket,
            document: document,
            page_title: document.title || "Sans titre",
+           last_update: document.last_update,
            title_form: to_form(%{"title" => document.title})
          )}
 
