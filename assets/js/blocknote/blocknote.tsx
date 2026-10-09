@@ -25,14 +25,17 @@ const csrfToken = document
 const socket = new Socket("/socket", { params: { _csrf_token: csrfToken } });
 socket.connect();
 const ydoc = new Y.Doc();
-const docname = `blocknote:${new URLSearchParams(window.location.search).get("docname") ?? "blocknote"}`;
+const documentId = domNode.dataset.documentId;
+if (!documentId) {
+  throw new Error("data-document-id missing on root element");
+}
 
 const provider = new PhoenixChannelProvider(
   socket,
-  `y_doc_room:${docname}`,
+  `y_doc_room:${documentId}`,
   ydoc,
 );
-const persistence = new IndexeddbPersistence(docname, ydoc);
+const persistence = new IndexeddbPersistence(`document:${documentId}`, ydoc);
 
 const usercolors = [
   "#30bced",

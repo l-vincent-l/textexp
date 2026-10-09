@@ -25,11 +25,7 @@ config :ash,
   transaction_rollback_on_error?: true,
   redact_sensitive_values_in_errors?: true,
   default_string_length_count: :codepoints,
-  many_to_many_destroy_destination_on_match?: true,
-  custom_types: [
-    ticket_status: MyApp.Support.Ticket.Types.Status,
-    writing_version: Textexp.Document.Writing.Version
-  ]
+  many_to_many_destroy_destination_on_match?: true
 
 config :spark,
   formatter: [

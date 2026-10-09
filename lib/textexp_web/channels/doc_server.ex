@@ -5,7 +5,7 @@ defmodule TextexpWeb.DocServer do
   alias Yex.Sync
   alias TextexpWeb.Presence
 
-  @persistence Textexp.EctoPersistence
+  @persistence Textexp.Document.YPersistence
   @ttl 5_000
   @awareness_throttle_ms 50
 
@@ -38,7 +38,11 @@ defmodule TextexpWeb.DocServer do
      })}
   end
 
+  # Contenu chargé depuis la base par `bind/3` : déjà persisté, et aucun client
+  # n'est encore connecté.
   @impl true
+  def handle_update_v1(_doc, _update, :persistence, state), do: {:noreply, state}
+
   def handle_update_v1(doc, update, origin, state) do
     persistance_state =
       @persistence.update_v1(

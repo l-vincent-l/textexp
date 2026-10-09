@@ -1,10 +1,9 @@
 defmodule Textexp.Document.Writing do
+  @moduledoc """
+  Update Yjs incrémentale reçue pour un document depuis son dernier compactage
+  (voir `Textexp.Document.Document`, attribut `snapshot`).
+  """
   use Ash.Resource, otp_app: :textexp, domain: Textexp.Document, data_layer: AshSqlite.DataLayer
-
-  # postgres do
-  #   table "writings"
-  #   repo Textexp.Repo
-  # end
 
   sqlite do
     table "writings"
@@ -12,25 +11,18 @@ defmodule Textexp.Document.Writing do
   end
 
   actions do
-    create :create do
-      accept [:value, :version, :doc_name]
-    end
-
-    read :get_updates do
-      argument :doc_name, :string
-
-      prepare build(sort: [inserted_at: :desc])
-      filter expr(doc_name == ^arg(:doc_name) and version == :v1)
-    end
-
-    read :get_state_vector do
-      argument :doc_name, :string
-
-      prepare build(sort: [inserted_at: :desc])
-      filter expr(doc_name == ^arg(:doc_name) and version == :v1_sv)
-    end
-
     defaults [:read, :destroy]
+
+    create :create do
+      accept [:value, :document_id]
+    end
+
+    read :for_document do
+      argument :document_id, :uuid, allow_nil?: false
+
+      filter expr(document_id == ^arg(:document_id))
+      prepare build(sort: [inserted_at: :asc])
+    end
   end
 
   attributes do
@@ -41,13 +33,13 @@ defmodule Textexp.Document.Writing do
       public? true
     end
 
-    attribute :version, Textexp.Document.Writing.Version
+    timestamps()
+  end
 
-    attribute :doc_name, :string do
+  relationships do
+    belongs_to :document, Textexp.Document.Document do
       allow_nil? false
       public? true
     end
-
-    timestamps()
   end
 end

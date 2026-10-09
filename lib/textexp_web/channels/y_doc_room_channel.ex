@@ -6,7 +6,7 @@ defmodule TextexpWeb.YDocRoomChannel do
   alias TextexpWeb.DocServer
   @impl true
   def join("y_doc_room:" <> doc_name = topic, _payload, socket) do
-    if authorized?(socket) do
+    if authorized?(socket, doc_name) do
       uid = "#{node()}_#{System.unique_integer()}"
 
       TextexpWeb.Presence.track_user(topic, uid, %{})
@@ -93,7 +93,7 @@ defmodule TextexpWeb.YDocRoomChannel do
         {:ok, pid}
 
       :undefined ->
-        DocServer.start([topic: topic, doc_name: doc_name, persistence: Textexp.EctoPersistence],
+        DocServer.start([topic: topic, doc_name: doc_name],
           name: {:via, :syn, {:doc_servers, doc_name}}
         )
     end
@@ -115,6 +115,9 @@ defmodule TextexpWeb.YDocRoomChannel do
     end
   end
 
-  # Any signed-in user can join any document.
-  defp authorized?(socket), do: socket.assigns[:current_user] != nil
+  # Any signed-in user can join any existing document.
+  defp authorized?(socket, document_id) do
+    socket.assigns[:current_user] != nil and
+      match?({:ok, _}, Textexp.Document.get_document(document_id))
+  end
 end
