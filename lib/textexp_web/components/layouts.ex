@@ -33,6 +33,10 @@ defmodule TextexpWeb.Layouts do
 
   attr :current_user, :map, default: nil, doc: "the signed-in user, if any"
 
+  attr :full_width, :boolean,
+    default: false,
+    doc: "when true, the content spans the whole page instead of a centered column"
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -73,7 +77,11 @@ defmodule TextexpWeb.Layouts do
       </div>
     </header>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
+    <main :if={@full_width} class="flex-1">
+      {render_slot(@inner_block)}
+    </main>
+
+    <main :if={!@full_width} class="px-4 py-20 sm:px-6 lg:px-8">
       <div class="mx-auto max-w-2xl space-y-4">
         {render_slot(@inner_block)}
       </div>
