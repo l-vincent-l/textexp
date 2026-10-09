@@ -25,6 +25,13 @@ config :swoosh, api_client: Swoosh.ApiClient.Req
 # Disable Swoosh Local Memory Storage
 config :swoosh, local: false
 
+# No mail provider yet: emails (confirmation, password reset, magic link) are
+# written to the logs instead of being sent, links included.
+config :textexp, Textexp.Mailer,
+  adapter: Swoosh.Adapters.Logger,
+  level: :info,
+  log_full_email: true
+
 # Do not print debug messages in production
 config :logger, level: :info
 
