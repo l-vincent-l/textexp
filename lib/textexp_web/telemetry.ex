@@ -53,26 +53,33 @@ defmodule TextexpWeb.Telemetry do
       ),
 
       # Database Metrics
-      summary("textexp.repo.query.total_time",
+      summary("textexp.sqlite_repo.query.total_time",
         unit: {:native, :millisecond},
         description: "The sum of the other measurements"
       ),
-      summary("textexp.repo.query.decode_time",
+      summary("textexp.sqlite_repo.query.decode_time",
         unit: {:native, :millisecond},
         description: "The time spent decoding the data received from the database"
       ),
-      summary("textexp.repo.query.query_time",
+      summary("textexp.sqlite_repo.query.query_time",
         unit: {:native, :millisecond},
         description: "The time spent executing the query"
       ),
-      summary("textexp.repo.query.queue_time",
+      summary("textexp.sqlite_repo.query.queue_time",
         unit: {:native, :millisecond},
         description: "The time spent waiting for a database connection"
       ),
-      summary("textexp.repo.query.idle_time",
+      summary("textexp.sqlite_repo.query.idle_time",
         unit: {:native, :millisecond},
         description:
           "The time the connection spent waiting before being checked out for the query"
+      ),
+
+      # Yjs persistence (database work done inside the DocServer)
+      summary("textexp.y_persistence.stop.duration",
+        tags: [:operation],
+        unit: {:native, :millisecond},
+        description: "Time the DocServer is blocked on the database, by operation"
       ),
 
       # VM Metrics

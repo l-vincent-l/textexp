@@ -8,7 +8,7 @@ defmodule TextexpWeb.DocServer do
   @persistence Textexp.Document.YPersistence
   @ttl 5_000
   @awareness_throttle_ms 50
-  @flush_interval_ms :timer.minutes(5)
+  @flush_interval_ms :timer.seconds(10)
 
   @impl true
   def init(option, %{doc: doc} = state) do
