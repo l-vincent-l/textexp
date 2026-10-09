@@ -16,6 +16,9 @@ defmodule Textexp.Application do
       {DNSCluster, query: Application.get_env(:textexp, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Textexp.PubSub},
       TextexpWeb.Presence,
+      # Après le Repo : à l'arrêt, les DocServers sont arrêtés (et flushés)
+      # avant lui.
+      {DynamicSupervisor, name: TextexpWeb.DocServerSupervisor, strategy: :one_for_one},
       # Start a worker by calling: Textexp.Worker.start_link(arg)
       # {Textexp.Worker, arg},
       # Start to serve requests, typically the last entry

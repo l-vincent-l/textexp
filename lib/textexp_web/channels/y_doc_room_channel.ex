@@ -93,9 +93,14 @@ defmodule TextexpWeb.YDocRoomChannel do
         {:ok, pid}
 
       :undefined ->
-        DocServer.start([topic: topic, doc_name: doc_name],
-          name: {:via, :syn, {:doc_servers, doc_name}}
-        )
+        DynamicSupervisor.start_child(TextexpWeb.DocServerSupervisor, %{
+          id: DocServer,
+          start:
+            {DocServer, :start_link,
+             [[topic: topic, doc_name: doc_name], [name: {:via, :syn, {:doc_servers, doc_name}}]]},
+          # le canal relance lui-même le DocServer s'il s'arrête (voir :DOWN)
+          restart: :temporary
+        })
     end
     |> case do
       {:ok, pid} ->
