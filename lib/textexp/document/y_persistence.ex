@@ -50,5 +50,33 @@ defmodule Textexp.Document.YPersistence do
   # insérés jusqu'ici sont donc déjà dans `doc`.
   defp compact(document, doc) do
     Document.compact_document!(document, Yex.encode_state_as_update!(doc), DateTime.utc_now())
+  @impl true
+  def update_v1(state, update, document_id, doc) do
+    writing = Document.add_writing!(document_id, update)
+    state = Map.update(state, :pending, 1, &(&1 + 1))
+
+    state =
+      if state.pending >= @flush_every_writings,
+        do: flush(state, document_id, doc),
+        else: state
+
+    maybe_broadcast(state, document_id, writing.inserted_at)
+  end
+
+  defp maybe_broadcast(state, document_id, at) do
+    now = System.monotonic_time(:millisecond)
+
+    if now - Map.get(state, :last_broadcast, now - @broadcast_interval_ms) >=
+         @broadcast_interval_ms do
+      Phoenix.PubSub.broadcast(
+        Textexp.PubSub,
+        topic(document_id),
+        {:document_updated, document_id, at}
+      )
+
+      Map.put(state, :last_broadcast, now)
+    else
+      state
+    end
   end
 end

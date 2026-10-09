@@ -173,6 +173,10 @@ defmodule TextexpWeb.DocumentLive do
 
   def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
+  def handle_info({:document_updated, _document_id, at}, socket) do
+    {:noreply, assign(socket, last_update: at)}
+  end
+
   def handle_info({Presence, {event, _user}}, socket) when event in [:join, :leave] do
     {:noreply, stream(socket, :viewers, viewers(socket.assigns.document.id), reset: true)}
   end
