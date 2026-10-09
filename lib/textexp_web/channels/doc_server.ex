@@ -8,12 +8,20 @@ defmodule TextexpWeb.DocServer do
   @persistence Textexp.Document.YPersistence
   @ttl 5_000
   @awareness_throttle_ms 50
+  @flush_interval_ms :timer.minutes(5)
 
   @impl true
   def init(option, %{doc: doc} = state) do
     topic = Keyword.fetch!(option, :topic)
     doc_name = Keyword.fetch!(option, :doc_name)
     Logger.info("DocServer for #{doc_name} initialized.")
+
+    # Pour que `terminate/2` (et donc le flush) soit appelé quand le superviseur
+    # arrête le DocServer, notamment à l'arrêt de l'application.
+    Process.flag(:trap_exit, true)
+
+    flush_interval_ms = Keyword.get(option, :flush_interval_ms, @flush_interval_ms)
+    Process.send_after(self(), :flush, flush_interval_ms)
 
     persistance_state = @persistence.bind(%{}, doc_name, doc)
 
@@ -29,6 +37,7 @@ defmodule TextexpWeb.DocServer do
        origin_clients_map: %{},
        user_count: user_count,
        persistance_state: persistance_state,
+       flush_interval_ms: flush_interval_ms,
        shutdown_timer_ref: nil,
        awareness_throttle_ms: @awareness_throttle_ms,
        awareness_window_open: false,
@@ -245,6 +254,14 @@ defmodule TextexpWeb.DocServer do
             {:noreply, state}
         end
     end
+  end
+
+  def handle_info(:flush, state) do
+    persistance_state =
+      @persistence.flush(state.assigns.persistance_state, state.assigns.doc_name, state.doc)
+
+    Process.send_after(self(), :flush, state.assigns.flush_interval_ms)
+    {:noreply, assign(state, :persistance_state, persistance_state)}
   end
 
   def handle_info(:delayed_shutdown, state) do

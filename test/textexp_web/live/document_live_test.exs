@@ -53,6 +53,38 @@ defmodule TextexpWeb.DocumentLiveTest do
       assert has_element?(view, "#documents-#{document.id}", "Mon document")
     end
 
+    test "shows content updates of the open document", %{conn: conn, user: user} do
+      document = Document.create_document!(%{}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      Phoenix.PubSub.broadcast(
+        Textexp.PubSub,
+        Textexp.Document.YPersistence.topic(document.id),
+        {:document_updated, document.id, ~U[2030-01-02 03:04:05.000000Z]}
+      )
+
+      assert has_element?(view, "#last-update", "02/01/2030 03:04:05")
+    end
+
+    test "lists the people viewing the document", %{conn: conn, user: user} do
+      document = Document.create_document!(%{}, actor: user)
+      other = register_user()
+
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+      {:ok, other_view, _html} = live(log_in(build_conn(), other), ~p"/documents/#{document.id}")
+
+      assert has_element?(view, "#viewers-#{user.id}")
+      assert has_element?(view, "#viewers-#{other.id}")
+
+      # le départ est traité de façon asynchrone par le tracker Presence
+      TextexpWeb.Presence.subscribe("viewers:#{document.id}")
+      other_id = other.id
+      GenServer.stop(other_view.pid)
+      assert_receive {TextexpWeb.Presence, {:leave, %{id: ^other_id}}}
+
+      refute has_element?(view, "#viewers-#{other.id}")
+    end
+
     test "an unknown document redirects to the list", %{conn: conn} do
       assert {:error, {:live_redirect, %{to: "/documents"}}} =
                live(conn, ~p"/documents/#{Ash.UUID.generate()}")
