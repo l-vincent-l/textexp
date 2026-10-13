@@ -1,4 +1,4 @@
-// blocknote.tsx を blocknote ディレクトリに移動
+// Moved blocknote.tsx into the blocknote directory
 import * as React from "react";
 import "@blocknote/core/fonts/inter.css";
 import { useCreateBlockNote } from "@blocknote/react";

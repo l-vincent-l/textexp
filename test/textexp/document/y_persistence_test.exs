@@ -29,8 +29,8 @@ defmodule Textexp.Document.YPersistenceTest do
     text(doc)
   end
 
-  # Applique une modification à `doc` et la signale à la persistance, comme le
-  # fait le DocServer.
+  # Applies an edit to `doc` and reports it to the persistence, as the
+  # DocServer does.
   defp edit(state, document, doc, content) do
     update = text_update(content)
     Yex.apply_update(doc, update)
@@ -153,12 +153,12 @@ defmodule Textexp.Document.YPersistenceTest do
       })
     end
 
-    # Envoie une modification au DocServer comme le ferait un client.
+    # Sends an edit to the DocServer as a client would.
     defp send_edit(pid, content) do
       {:ok, sync} = Yex.Sync.get_update(text_update(content))
       {:ok, message} = Yex.Sync.message_encode({:sync, sync})
       DocServer.process_message_v1(pid, message, self())
-      # applique le message, puis traite la notification d'update qui en découle
+      # applies the message, then handles the resulting update notification
       _ = :sys.get_state(pid)
       _ = :sys.get_state(pid)
     end
@@ -182,7 +182,7 @@ defmodule Textexp.Document.YPersistenceTest do
 
       refute Document.get_document!(document.id).snapshot
 
-      # message normalement envoyé par le timer du DocServer
+      # message normally sent by the DocServer's timer
       send(pid, :flush)
       _ = :sys.get_state(pid)
 

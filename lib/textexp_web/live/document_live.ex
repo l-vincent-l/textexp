@@ -19,7 +19,7 @@ defmodule TextexpWeb.DocumentLive do
         <input id="sidebar-drawer" type="checkbox" class="drawer-toggle" />
 
         <div class="drawer-content flex flex-col">
-          <%!-- Bouton d'ouverture : visible uniquement sur petit écran --%>
+          <%!-- Open button: only visible on small screens --%>
           <div class="p-2 lg:hidden">
             <label
               id="sidebar-open"
@@ -32,7 +32,7 @@ defmodule TextexpWeb.DocumentLive do
           </div>
 
           <%= if @document do %>
-            <%!-- Le titre partage le fond, la police et les marges de l'éditeur BlockNote (thème light) --%>
+            <%!-- The title shares the background, font and margins of the BlockNote editor (light theme) --%>
             <div class="flex flex-1 flex-col bg-white font-['Inter',sans-serif] text-[#3f3f3f]">
               <div class="document-header px-[54px] pt-12 pb-2">
                 <.form
@@ -55,7 +55,7 @@ defmodule TextexpWeb.DocumentLive do
                   <p id="last-update" class="text-sm text-[#9b9b9b]">
                     Dernière mise à jour : {Calendar.strftime(@last_update, "%d/%m/%Y %H:%M:%S")} UTC
                   </p>
-                  <%!-- Personnes ayant ce document ouvert --%>
+                  <%!-- People who have this document open --%>
                   <ul id="viewers" class="flex -space-x-2" phx-update="stream">
                     <li
                       :for={{id, viewer} <- @streams.viewers}
@@ -76,7 +76,7 @@ defmodule TextexpWeb.DocumentLive do
                 </div>
                 <div class="divider"></div>
               </div>
-              <%!-- React gère ce nœud : LiveView ne doit pas y toucher --%>
+              <%!-- React manages this node: LiveView must not touch it --%>
               <div
                 id="root"
                 class="flex-1 w-full"
@@ -107,8 +107,8 @@ defmodule TextexpWeb.DocumentLive do
             >
               <.icon name="hero-plus" class="size-4" /> Nouveau document
             </button>
-            <%!-- Liens en href (rechargement complet) : l'éditeur BlockNote est
-                 initialisé une seule fois au chargement de la page. --%>
+            <%!-- href links (full reload): the BlockNote editor is only
+                 initialized once, on page load. --%>
             <ul id="documents" class="menu w-full p-0" phx-update="stream">
               <li id="documents-empty" class="hidden only:block px-3 py-2 text-sm opacity-60">
                 Aucun document
@@ -183,7 +183,7 @@ defmodule TextexpWeb.DocumentLive do
 
   defp viewers_topic(document_id), do: "viewers:#{document_id}"
 
-  # Un utilisateur avec plusieurs onglets ouverts n'apparaît qu'une fois.
+  # A user with several open tabs only appears once.
   defp viewers(document_id) do
     document_id
     |> viewers_topic()

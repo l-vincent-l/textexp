@@ -1,9 +1,9 @@
 defmodule Textexp.Document.Document do
   @moduledoc """
-  Un document collaboratif.
+  A collaborative document.
 
-  Son contenu Yjs est stocké dans `snapshot` : l'état complet, réécrit au plus
-  toutes les 10 s pendant l'édition (voir `Textexp.Document.YPersistence`).
+  Its Yjs content is stored in `snapshot`: the full state, rewritten at most
+  every 10 s while it is being edited (see `Textexp.Document.YPersistence`).
   """
   use Ash.Resource, otp_app: :textexp, domain: Textexp.Document, data_layer: AshSqlite.DataLayer
 
@@ -25,7 +25,7 @@ defmodule Textexp.Document.Document do
     end
 
     update :save_snapshot do
-      description "Remplace le snapshot par l'état Yjs complet du document."
+      description "Replaces the snapshot with the full Yjs state of the document."
       require_atomic? false
       accept [:snapshot]
     end
@@ -49,8 +49,8 @@ defmodule Textexp.Document.Document do
   end
 
   calculations do
-    # Le snapshot étant réécrit à chaque sauvegarde, c'est `updated_at` (qui
-    # change aussi au renommage).
+    # The snapshot is rewritten on each save, so this is `updated_at` (which
+    # also changes on rename).
     calculate :last_update, :utc_datetime_usec, expr(updated_at)
   end
 end

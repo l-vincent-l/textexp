@@ -1,20 +1,20 @@
 defmodule Textexp.Document.YPersistence do
   @moduledoc """
-  Persistance Yjs d'un `Textexp.Document.Document`, sur le modèle de y-sweet :
-  un snapshot complet par document, réécrit au plus toutes les 10 s.
+  Yjs persistence of a `Textexp.Document.Document`, modeled on y-sweet: one
+  full snapshot per document, rewritten at most every 10 s.
 
-  - au chargement (`bind/3`) : on applique le snapshot ;
-  - à chaque modification (`update_v1/4`) : rien en base, le document est
-    seulement marqué comme modifié (`:dirty`) ;
-  - sauvegarde (`flush/3`) du snapshot si le document a été modifié :
-    - toutes les 10 s, appelée par le DocServer ;
-    - à l'arrêt du DocServer (`unbind/3`), y compris à l'arrêt de l'application.
+  - on load (`bind/3`): the snapshot is applied;
+  - on each edit (`update_v1/4`): nothing is written, the document is only
+    marked as modified (`:dirty`);
+  - the snapshot is saved (`flush/3`) if the document was modified:
+    - every 10 s, called by the DocServer;
+    - when the DocServer stops (`unbind/3`), including on application shutdown.
 
-  En cas d'arrêt brutal, les modifications des 10 dernières secondes manquent en
-  base ; les clients Yjs les renvoient à la resynchronisation.
+  After a crash, the edits of the last 10 seconds are missing from the
+  database; Yjs clients send them again when they resync.
 
-  Les updates appliquées au chargement portent l'origine
-  `YPhoenix.Persistence.origin/0`, que le DocServer ignore.
+  Updates applied on load use the `YPhoenix.Persistence.origin/0` origin,
+  which the DocServer ignores.
   """
   @behaviour YPhoenix.Persistence
 
@@ -26,8 +26,8 @@ defmodule Textexp.Document.YPersistence do
   @slow_ms 200
 
   @doc """
-  Topic PubSub sur lequel est diffusé `{:document_updated, document_id, at}` à
-  chaque sauvegarde du document.
+  PubSub topic on which `{:document_updated, document_id, at}` is broadcast
+  each time the document is saved.
   """
   def topic(document_id), do: "document:#{document_id}"
 
@@ -53,8 +53,8 @@ defmodule Textexp.Document.YPersistence do
 
   @impl true
   @doc """
-  Sauvegarde le snapshot du document s'il a été modifié depuis la dernière
-  sauvegarde ; ne fait rien sinon.
+  Saves the document's snapshot if it was modified since the last save; does
+  nothing otherwise.
   """
   def flush(%{dirty: false} = state, _document_id, _doc), do: state
 
@@ -77,9 +77,9 @@ defmodule Textexp.Document.YPersistence do
     Map.put(state, :dirty, false)
   end
 
-  # Mesure une opération en base faite dans le DocServer, qui bloque pendant ce
-  # temps tous les clients du document. Émet `[:textexp, :y_persistence, :stop]`
-  # et logge les opérations lentes avec la file d'attente du DocServer.
+  # Measures a database operation done in the DocServer, which blocks all the
+  # document's clients meanwhile. Emits `[:textexp, :y_persistence, :stop]` and
+  # logs slow operations along with the DocServer's message queue length.
   defp timed(operation, document_id, fun) do
     start = System.monotonic_time()
     result = fun.()

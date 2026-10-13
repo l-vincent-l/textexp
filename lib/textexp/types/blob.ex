@@ -1,12 +1,12 @@
 defmodule Textexp.Types.Blob do
   @moduledoc """
-  Binaire stocké en BLOB SQLite.
+  Binary stored as a SQLite BLOB.
 
-  `ecto_libsql` envoie un binaire Elixir qui se trouve être de l'UTF-8 valide
-  comme du TEXT, que SQLite tronque au premier octet nul à la relecture : une
-  update Yjs sur ~50 était ainsi corrompue. On l'envoie donc explicitement
-  comme `{:blob, octets}`, que le driver stocke toujours en BLOB ; il attend
-  les octets sous forme de liste.
+  `ecto_libsql` sends an Elixir binary that happens to be valid UTF-8 as TEXT,
+  which SQLite truncates at the first NUL byte when reading it back: about one
+  Yjs update in 50 got corrupted this way. So it is sent explicitly as
+  `{:blob, bytes}`, which the driver always stores as a BLOB; it expects the
+  bytes as a list.
   """
   use Ash.Type
 

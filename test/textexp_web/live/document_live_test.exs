@@ -76,7 +76,7 @@ defmodule TextexpWeb.DocumentLiveTest do
       assert has_element?(view, "#viewers-#{user.id}")
       assert has_element?(view, "#viewers-#{other.id}")
 
-      # le départ est traité de façon asynchrone par le tracker Presence
+      # the leave is handled asynchronously by the Presence tracker
       TextexpWeb.Presence.subscribe("viewers:#{document.id}")
       other_id = other.id
       GenServer.stop(other_view.pid)
