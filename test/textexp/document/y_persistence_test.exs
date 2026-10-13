@@ -3,7 +3,7 @@ defmodule Textexp.Document.YPersistenceTest do
 
   alias Textexp.Document
   alias Textexp.Document.YPersistence
-  alias TextexpWeb.DocServer
+  alias YPhoenix.DocServer
 
   defp register_user do
     Textexp.Accounts.User
@@ -145,7 +145,11 @@ defmodule Textexp.Document.YPersistenceTest do
         id: DocServer,
         start:
           {DocServer, :start_link,
-           [[topic: "y_doc_room:#{document.id}", doc_name: document.id], []]}
+           [
+             [topic: "y_doc_room:#{document.id}", doc_name: document.id] ++
+               TextexpWeb.YDocRoomChannel.doc_server_opts(),
+             []
+           ]}
       })
     end
 

@@ -1,124 +1,31 @@
 defmodule TextexpWeb.YDocRoomChannel do
   use TextexpWeb, :channel
 
-  require Logger
+  @doc_server_opts [
+    endpoint: TextexpWeb.Endpoint,
+    persistence: Textexp.Document.YPersistence,
+    presence: TextexpWeb.Presence,
+    supervisor: TextexpWeb.DocServerSupervisor,
+    registry_scope: :doc_servers
+  ]
 
-  alias TextexpWeb.DocServer
+  @doc "Options passed to `YPhoenix.Channel` and `YPhoenix.DocServer`."
+  def doc_server_opts, do: @doc_server_opts
+
   @impl true
   def join("y_doc_room:" <> doc_name = topic, _payload, socket) do
     if authorized?(socket, doc_name) do
-      uid = "#{node()}_#{System.unique_integer()}"
-
-      TextexpWeb.Presence.track_user(topic, uid, %{})
-
-      case start_shared_doc(topic, doc_name) do
-        {:ok, docpid} ->
-          Process.monitor(docpid)
-          {:ok, socket |> assign(doc_name: doc_name, doc_pid: docpid)}
-
-        {:error, reason} ->
-          {:error, %{reason: reason}}
-      end
+      YPhoenix.Channel.join(socket, topic, doc_name, @doc_server_opts)
     else
       {:error, %{reason: "unauthorized"}}
     end
   end
 
   @impl true
-  def handle_in("yjs_sync", {:binary, chunk}, socket) do
-    server = socket.assigns.doc_pid
-
-    DocServer.process_message_v1(server, chunk, self())
-    |> handle_process_message_result(server)
-
-    {:noreply, socket}
-  end
-
-  def handle_in("yjs", {:binary, chunk}, socket) do
-    server = socket.assigns.doc_pid
-
-    DocServer.process_message_v1(server, chunk, self())
-    |> handle_process_message_result(server)
-
-    {:noreply, socket}
-  end
-
-  defp handle_process_message_result(result, server) do
-    case result do
-      {:ok, replies} ->
-        Enum.each(replies, fn reply ->
-          send(self(), {:yjs, reply, server})
-        end)
-
-        :ok
-
-      error ->
-        error
-    end
-  end
+  def handle_in(event, payload, socket), do: YPhoenix.Channel.handle_in(event, payload, socket)
 
   @impl true
-  def handle_info({:yjs, message, _proc}, socket) do
-    push(socket, "yjs", {:binary, message})
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_info(
-        {:DOWN, _ref, :process, pid, _reason},
-        %{assigns: %{doc_pid: pid, doc_name: doc_name}} = socket
-      ) do
-    # Only handle :DOWN for the current doc_pid
-    topic = "y_doc_room:" <> doc_name
-    _old_pid = pid
-
-    case start_shared_doc(topic, doc_name) do
-      {:ok, docpid} ->
-        Process.monitor(docpid)
-        push(socket, "yjs_resync", %{})
-        {:noreply, assign(socket, doc_pid: docpid)}
-
-      {:error, reason} ->
-        push(socket, "yjs_server_down", %{})
-        {:stop, {:error, "failed to restart shared doc: #{inspect(reason)}"}, socket}
-    end
-  end
-
-  # Catch-all for unrelated :DOWNs (do nothing)
-  def handle_info({:DOWN, _ref, :process, _pid, _reason}, socket), do: {:noreply, socket}
-
-  defp start_shared_doc(topic, doc_name) do
-    case :syn.lookup(:doc_servers, doc_name) do
-      {pid, _metadata} ->
-        {:ok, pid}
-
-      :undefined ->
-        DynamicSupervisor.start_child(TextexpWeb.DocServerSupervisor, %{
-          id: DocServer,
-          start:
-            {DocServer, :start_link,
-             [[topic: topic, doc_name: doc_name], [name: {:via, :syn, {:doc_servers, doc_name}}]]},
-          # le canal relance lui-même le DocServer s'il s'arrête (voir :DOWN)
-          restart: :temporary
-        })
-    end
-    |> case do
-      {:ok, pid} ->
-        {:ok, pid}
-
-      {:error, {:already_started, pid}} ->
-        {:ok, pid}
-
-      {:error, reason} ->
-        Logger.error("""
-        Failed to start shareddoc.
-        Room: #{inspect(doc_name)}
-        Reason: #{inspect(reason)}
-        """)
-
-        {:error, %{reason: "failed to start shareddoc"}}
-    end
-  end
+  def handle_info(msg, socket), do: YPhoenix.Channel.handle_info(msg, socket)
 
   # Any signed-in user can join any existing document.
   defp authorized?(socket, document_id) do

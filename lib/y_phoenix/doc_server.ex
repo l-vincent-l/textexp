@@ -1,12 +1,28 @@
-defmodule TextexpWeb.DocServer do
+defmodule YPhoenix.DocServer do
+  @moduledoc """
+  Process that holds a shared Yjs document and broadcasts its updates and
+  awareness to the clients subscribed to the document's topic.
+
+  Options:
+
+    * `:topic` - Phoenix topic on which Yjs messages are broadcast;
+    * `:doc_name` - document identifier, passed to the persistence;
+    * `:endpoint` - Phoenix endpoint used to broadcast;
+    * `:persistence` - module implementing `YPhoenix.Persistence`;
+    * `:presence` - module implementing `YPhoenix.Presence`;
+    * `:flush_interval_ms` - interval between two saves (default 10 s);
+    * `:shutdown_delay_ms` - delay before stopping once the last client has
+      left (default 5 s);
+    * `:awareness_throttle_ms` - window in which awareness updates are batched
+      (default 50 ms).
+  """
   use Yex.DocServer
   require Logger
   alias Yex.Awareness
   alias Yex.Sync
-  alias TextexpWeb.Presence
 
-  @persistence Textexp.Document.YPersistence
-  @ttl 5_000
+  @persistence_origin YPhoenix.Persistence.origin()
+  @shutdown_delay_ms 5_000
   @awareness_throttle_ms 50
   @flush_interval_ms :timer.seconds(10)
 
@@ -14,32 +30,39 @@ defmodule TextexpWeb.DocServer do
   def init(option, %{doc: doc} = state) do
     topic = Keyword.fetch!(option, :topic)
     doc_name = Keyword.fetch!(option, :doc_name)
+    endpoint = Keyword.fetch!(option, :endpoint)
+    persistence = Keyword.fetch!(option, :persistence)
+    presence = Keyword.fetch!(option, :presence)
     Logger.info("DocServer for #{doc_name} initialized.")
 
-    # Pour que `terminate/2` (et donc le flush) soit appelé quand le superviseur
-    # arrête le DocServer, notamment à l'arrêt de l'application.
+    # So that `terminate/2` (and thus the flush) runs when the supervisor stops
+    # the DocServer, including when the application shuts down.
     Process.flag(:trap_exit, true)
 
     flush_interval_ms = Keyword.get(option, :flush_interval_ms, @flush_interval_ms)
     Process.send_after(self(), :flush, flush_interval_ms)
 
-    persistance_state = @persistence.bind(%{}, doc_name, doc)
+    persistance_state = persistence.bind(%{}, doc_name, doc)
 
-    Presence.subscribe(topic)
+    presence.subscribe(topic)
 
-    user_count = Presence.list_users(topic) |> length()
+    user_count = presence.list_users(topic) |> length()
 
     {:ok,
      state
      |> assign(%{
        topic: topic,
        doc_name: doc_name,
+       endpoint: endpoint,
+       persistence: persistence,
+       presence: presence,
        origin_clients_map: %{},
        user_count: user_count,
        persistance_state: persistance_state,
        flush_interval_ms: flush_interval_ms,
+       shutdown_delay_ms: Keyword.get(option, :shutdown_delay_ms, @shutdown_delay_ms),
        shutdown_timer_ref: nil,
-       awareness_throttle_ms: @awareness_throttle_ms,
+       awareness_throttle_ms: Keyword.get(option, :awareness_throttle_ms, @awareness_throttle_ms),
        awareness_window_open: false,
        awareness_pending_clients: MapSet.new(),
        awareness_pending_origin: :unset,
@@ -47,14 +70,14 @@ defmodule TextexpWeb.DocServer do
      })}
   end
 
-  # Contenu chargé depuis la base par `bind/3` : déjà persisté, et aucun client
-  # n'est encore connecté.
+  # Content loaded by `bind/3`: already persisted, and no client is connected
+  # yet.
   @impl true
-  def handle_update_v1(_doc, _update, :persistence, state), do: {:noreply, state}
+  def handle_update_v1(_doc, _update, @persistence_origin, state), do: {:noreply, state}
 
   def handle_update_v1(doc, update, origin, state) do
     persistance_state =
-      @persistence.update_v1(
+      state.assigns.persistence.update_v1(
         state.assigns.persistance_state,
         update,
         state.assigns.doc_name,
@@ -65,16 +88,7 @@ defmodule TextexpWeb.DocServer do
 
     with {:ok, s} <- Sync.get_update(update),
          {:ok, message} <- Sync.message_encode({:sync, s}) do
-      if origin do
-        TextexpWeb.Endpoint.broadcast_from(
-          origin,
-          state.assigns.topic,
-          "yjs",
-          {:binary, message}
-        )
-      else
-        TextexpWeb.Endpoint.broadcast(state.assigns.topic, "yjs", {:binary, message})
-      end
+      broadcast(state.assigns.endpoint, origin, state.assigns.topic, message)
     else
       error ->
         error
@@ -111,7 +125,7 @@ defmodule TextexpWeb.DocServer do
     else
       with {:ok, update} <- Awareness.encode_update(awareness, MapSet.to_list(updated_clients)),
            {:ok, message} <- Sync.message_encode({:awareness, update}) do
-        broadcast_awareness_update(origin, state.assigns.topic, message)
+        broadcast(state.assigns.endpoint, origin, state.assigns.topic, message)
 
         ref =
           Process.send_after(
@@ -135,11 +149,11 @@ defmodule TextexpWeb.DocServer do
     end
   end
 
-  defp broadcast_awareness_update(origin, topic, message) do
+  defp broadcast(endpoint, origin, topic, message) do
     if origin do
-      TextexpWeb.Endpoint.broadcast_from(origin, topic, "yjs", {:binary, message})
+      endpoint.broadcast_from(origin, topic, "yjs", {:binary, message})
     else
-      TextexpWeb.Endpoint.broadcast(topic, "yjs", {:binary, message})
+      endpoint.broadcast(topic, "yjs", {:binary, message})
     end
   end
 
@@ -191,7 +205,7 @@ defmodule TextexpWeb.DocServer do
   end
 
   @impl true
-  def handle_info({Presence, {:join, _presence}}, state) do
+  def handle_info({presence, {:join, _presence}}, %{assigns: %{presence: presence}} = state) do
     state = assign(state, :user_count, state.assigns.user_count + 1)
     # Cancel shutdown timer if a user joins
     if state.assigns.shutdown_timer_ref do
@@ -201,7 +215,7 @@ defmodule TextexpWeb.DocServer do
     {:noreply, assign(state, :shutdown_timer_ref, nil)}
   end
 
-  def handle_info({Presence, {:leave, _presence}}, state) do
+  def handle_info({presence, {:leave, _presence}}, %{assigns: %{presence: presence}} = state) do
     user_count = state.assigns.user_count - 1
     state = assign(state, :user_count, user_count)
 
@@ -213,7 +227,7 @@ defmodule TextexpWeb.DocServer do
     # Set new shutdown timer if no users remain
     state =
       if user_count <= 0 do
-        ref = Process.send_after(self(), :delayed_shutdown, @ttl)
+        ref = Process.send_after(self(), :delayed_shutdown, state.assigns.shutdown_delay_ms)
         assign(state, :shutdown_timer_ref, ref)
       else
         assign(state, :shutdown_timer_ref, nil)
@@ -246,7 +260,7 @@ defmodule TextexpWeb.DocServer do
       _ ->
         with {:ok, update} <- Awareness.encode_update(state.awareness, pending_clients),
              {:ok, message} <- Sync.message_encode({:awareness, update}) do
-          broadcast_awareness_update(trailing_origin, topic, message)
+          broadcast(state.assigns.endpoint, trailing_origin, topic, message)
           {:noreply, state}
         else
           error ->
@@ -258,7 +272,11 @@ defmodule TextexpWeb.DocServer do
 
   def handle_info(:flush, state) do
     persistance_state =
-      @persistence.flush(state.assigns.persistance_state, state.assigns.doc_name, state.doc)
+      state.assigns.persistence.flush(
+        state.assigns.persistance_state,
+        state.assigns.doc_name,
+        state.doc
+      )
 
     Process.send_after(self(), :flush, state.assigns.flush_interval_ms)
     {:noreply, assign(state, :persistance_state, persistance_state)}
@@ -278,7 +296,7 @@ defmodule TextexpWeb.DocServer do
       Process.cancel_timer(state.assigns.awareness_flush_timer_ref)
     end
 
-    @persistence.unbind(
+    state.assigns.persistence.unbind(
       state.assigns.persistance_state,
       state.assigns.doc_name,
       state.doc

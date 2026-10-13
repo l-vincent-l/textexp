@@ -3,16 +3,19 @@ defmodule TextexpWeb.Presence do
     otp_app: :y_phoenix,
     pubsub_server: Textexp.PubSub
 
+  @impl Phoenix.Presence
   def init(_opts) do
     {:ok, %{}}
   end
 
+  @impl Phoenix.Presence
   def fetch(_topic, presences) do
     for {key, %{metas: [meta | metas]}} <- presences, into: %{} do
       {key, %{metas: [meta | metas]}}
     end
   end
 
+  @impl Phoenix.Presence
   def handle_metas(topic, %{joins: joins, leaves: leaves}, presences, state) do
     for {user_id, _presence} <- joins do
       user_data = %{id: user_id, metas: Map.fetch!(presences, user_id)}
@@ -35,7 +38,12 @@ defmodule TextexpWeb.Presence do
     {:ok, state}
   end
 
+  @behaviour YPhoenix.Presence
+
+  @impl YPhoenix.Presence
   def list_users(topic), do: list(topic) |> Enum.map(fn {_id, presence} -> presence end)
+  @impl YPhoenix.Presence
   def track_user(topic, name, params), do: track(self(), topic, name, params)
+  @impl YPhoenix.Presence
   def subscribe(topic), do: Phoenix.PubSub.subscribe(Textexp.PubSub, "proxy:#{topic}")
 end

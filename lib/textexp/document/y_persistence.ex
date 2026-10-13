@@ -13,19 +13,17 @@ defmodule Textexp.Document.YPersistence do
   En cas d'arrêt brutal, les modifications des 10 dernières secondes manquent en
   base ; les clients Yjs les renvoient à la resynchronisation.
 
-  Les updates appliquées au chargement portent l'origine `origin/0`, que le
-  DocServer doit ignorer.
+  Les updates appliquées au chargement portent l'origine
+  `YPhoenix.Persistence.origin/0`, que le DocServer ignore.
   """
-  @behaviour Yex.Sync.SharedDoc.PersistenceBehaviour
+  @behaviour YPhoenix.Persistence
 
   require Logger
 
   alias Textexp.Document
 
-  @origin :persistence
+  @origin YPhoenix.Persistence.origin()
   @slow_ms 200
-
-  def origin, do: @origin
 
   @doc """
   Topic PubSub sur lequel est diffusé `{:document_updated, document_id, at}` à
@@ -53,6 +51,7 @@ defmodule Textexp.Document.YPersistence do
   @impl true
   def update_v1(state, _update, _document_id, _doc), do: Map.put(state, :dirty, true)
 
+  @impl true
   @doc """
   Sauvegarde le snapshot du document s'il a été modifié depuis la dernière
   sauvegarde ; ne fait rien sinon.
