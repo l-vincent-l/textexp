@@ -21,6 +21,23 @@ defmodule Textexp.Document.YPersistenceTest do
     Yex.encode_state_as_update!(source)
   end
 
+  # Body as written by the BlockNote editor: one block per `{tag, text}` pair.
+  defp body_update(blocks) do
+    source = Yex.Doc.new()
+
+    containers =
+      for {tag, text} <- blocks do
+        children = if text == "", do: [], else: [Yex.XmlTextPrelim.from(text)]
+        Yex.XmlElementPrelim.new("blockContainer", [Yex.XmlElementPrelim.new(tag, children)])
+      end
+
+    source
+    |> Yex.Doc.get_xml_fragment("document-store")
+    |> Yex.XmlFragment.push(Yex.XmlElementPrelim.new("blockGroup", containers))
+
+    Yex.encode_state_as_update!(source)
+  end
+
   defp text(doc), do: doc |> Yex.Doc.get_text("t") |> Yex.Text.to_string()
 
   defp loaded_text(document_id) do
@@ -37,8 +54,9 @@ defmodule Textexp.Document.YPersistenceTest do
     YPersistence.update_v1(state, update, document.id, doc)
   end
 
+  # Titled, so that unbind keeps it (see "unbind of an empty document").
   setup do
-    %{document: Document.create_document!(%{}, actor: register_user())}
+    %{document: Document.create_document!(%{title: "Notes"}, actor: register_user())}
   end
 
   test "loading applies the saved snapshot", %{document: document} do
@@ -137,6 +155,61 @@ defmodule Textexp.Document.YPersistenceTest do
 
     YPersistence.flush(state, document.id, doc)
     assert_receive {:y_persistence, :save, _}
+  end
+
+  describe "unbind of an empty document" do
+    setup do
+      %{document: Document.create_document!(%{}, actor: register_user())}
+    end
+
+    defp unbind_with_body(document, blocks) do
+      doc = Yex.Doc.new()
+      state = YPersistence.bind(%{}, document.id, doc)
+      update = body_update(blocks)
+      Yex.apply_update(doc, update)
+      state = YPersistence.update_v1(state, update, document.id, doc)
+      YPersistence.unbind(state, document.id, doc)
+    end
+
+    test "deletes a document without title nor body", %{document: document} do
+      Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.documents_topic())
+      document_id = document.id
+
+      doc = Yex.Doc.new()
+      state = YPersistence.bind(%{}, document.id, doc)
+      YPersistence.unbind(state, document.id, doc)
+
+      assert {:error, _} = Document.get_document(document.id)
+      assert_receive {:document_deleted, ^document_id}
+    end
+
+    test "deletes a document whose body only has empty paragraphs", %{document: document} do
+      unbind_with_body(document, [{"paragraph", ""}, {"paragraph", "  "}])
+
+      assert {:error, _} = Document.get_document(document.id)
+    end
+
+    test "keeps an untitled document with text", %{document: document} do
+      unbind_with_body(document, [{"paragraph", ""}, {"paragraph", "hello"}])
+
+      assert {:ok, %{snapshot: snapshot}} = Document.get_document(document.id)
+      assert snapshot
+    end
+
+    test "keeps an untitled document with a block other than a paragraph",
+         %{document: document} do
+      unbind_with_body(document, [{"image", ""}])
+
+      assert {:ok, _} = Document.get_document(document.id)
+    end
+
+    test "keeps a titled document without body", %{document: document} do
+      document = Document.rename_document!(document, "Notes")
+
+      unbind_with_body(document, [])
+
+      assert {:ok, _} = Document.get_document(document.id)
+    end
   end
 
   describe "DocServer" do

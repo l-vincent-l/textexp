@@ -85,6 +85,33 @@ defmodule TextexpWeb.DocumentLiveTest do
       refute has_element?(view, "#viewers-#{other.id}")
     end
 
+    test "a deleted empty document leaves the sidebar", %{conn: conn, user: user} do
+      document = Document.create_document!(%{}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents")
+      assert has_element?(view, "#documents-#{document.id}")
+
+      Phoenix.PubSub.broadcast(
+        Textexp.PubSub,
+        Textexp.Document.YPersistence.documents_topic(),
+        {:document_deleted, document.id}
+      )
+
+      refute has_element?(view, "#documents-#{document.id}")
+    end
+
+    test "the open document being deleted redirects to the list", %{conn: conn, user: user} do
+      document = Document.create_document!(%{}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      Phoenix.PubSub.broadcast(
+        Textexp.PubSub,
+        Textexp.Document.YPersistence.documents_topic(),
+        {:document_deleted, document.id}
+      )
+
+      assert_redirect(view, ~p"/documents")
+    end
+
     test "an unknown document redirects to the list", %{conn: conn} do
       assert {:error, {:live_redirect, %{to: "/documents"}}} =
                live(conn, ~p"/documents/#{Ash.UUID.generate()}")

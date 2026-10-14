@@ -14,6 +14,7 @@ defmodule Textexp.Document do
       define :list_documents, action: :read
       define :rename_document, action: :rename, args: [:title]
       define :save_snapshot, action: :save_snapshot, args: [:snapshot]
+      define :destroy_document, action: :destroy
     end
   end
 end

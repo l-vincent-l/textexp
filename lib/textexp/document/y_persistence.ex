@@ -10,6 +10,10 @@ defmodule Textexp.Document.YPersistence do
     - every 10 s, called by the DocServer;
     - when the DocServer stops (`unbind/3`), including on application shutdown.
 
+  When the DocServer stops, a document with neither title nor body (typically
+  created then left empty) is deleted instead of saved, and
+  `{:document_deleted, document_id}` is broadcast on `documents_topic/0`.
+
   After a crash, the edits of the last 10 seconds are missing from the
   database; Yjs clients send them again when they resync.
 
@@ -25,11 +29,22 @@ defmodule Textexp.Document.YPersistence do
   @origin YPhoenix.Persistence.origin()
   @slow_ms 200
 
+  # XmlFragment holding the body, written by the BlockNote editor (blocknote.tsx)
+  @body_fragment "document-store"
+  # Tags of an empty BlockNote body: the block structure and empty paragraphs
+  @empty_body_tags ["blockGroup", "blockContainer", "paragraph"]
+
   @doc """
   PubSub topic on which `{:document_updated, document_id, at}` is broadcast
   each time the document is saved.
   """
   def topic(document_id), do: "document:#{document_id}"
+
+  @doc """
+  PubSub topic on which `{:document_deleted, document_id}` is broadcast when an
+  empty document is deleted.
+  """
+  def documents_topic, do: "documents"
 
   @impl true
   def bind(state, document_id, doc) do
@@ -44,7 +59,20 @@ defmodule Textexp.Document.YPersistence do
 
   @impl true
   def unbind(state, document_id, doc) do
-    flush(state, document_id, doc)
+    document = Document.get_document!(document_id)
+
+    if blank?(document.title) and empty_body?(doc) do
+      timed(:delete, document_id, fn -> Document.destroy_document!(document) end)
+
+      Phoenix.PubSub.broadcast(
+        Textexp.PubSub,
+        documents_topic(),
+        {:document_deleted, document_id}
+      )
+    else
+      flush(state, document_id, doc)
+    end
+
     :ok
   end
 
@@ -75,6 +103,18 @@ defmodule Textexp.Document.YPersistence do
     )
 
     Map.put(state, :dirty, false)
+  end
+
+  defp blank?(title), do: is_nil(title) or String.trim(title) == ""
+
+  # The body is empty when it has no text and only holds empty paragraphs:
+  # any other block (image, table, divider...) counts as content.
+  defp empty_body?(doc) do
+    xml = doc |> Yex.Doc.get_xml_fragment(@body_fragment) |> Yex.XmlFragment.to_string()
+    tags = Regex.scan(~r/<([A-Za-z][\w-]*)/, xml, capture: :all_but_first) |> List.flatten()
+    text = Regex.replace(~r/<[^>]*>/, xml, "")
+
+    String.trim(text) == "" and Enum.all?(tags, &(&1 in @empty_body_tags))
   end
 
   # Measures a database operation done in the DocServer, which blocks all the

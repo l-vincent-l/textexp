@@ -131,6 +131,10 @@ defmodule TextexpWeb.DocumentLive do
   end
 
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.documents_topic())
+    end
+
     documents = Document.list_documents!(query: [sort: [last_update: :desc]])
 
     {:ok,
@@ -175,6 +179,17 @@ defmodule TextexpWeb.DocumentLive do
 
   def handle_info({:document_updated, _document_id, at}, socket) do
     {:noreply, assign(socket, last_update: at)}
+  end
+
+  # An empty document was left and deleted (see YPersistence).
+  def handle_info({:document_deleted, document_id}, socket) do
+    socket = stream_delete_by_dom_id(socket, :documents, "documents-#{document_id}")
+
+    if socket.assigns.document && socket.assigns.document.id == document_id do
+      {:noreply, push_navigate(socket, to: ~p"/documents")}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info({Presence, {event, _user}}, socket) when event in [:join, :leave] do
