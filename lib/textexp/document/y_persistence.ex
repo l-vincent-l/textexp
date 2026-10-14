@@ -25,14 +25,10 @@ defmodule Textexp.Document.YPersistence do
   require Logger
 
   alias Textexp.Document
+  alias Textexp.Document.Body
 
   @origin YPhoenix.Persistence.origin()
   @slow_ms 200
-
-  # XmlFragment holding the body, written by the BlockNote editor (blocknote.tsx)
-  @body_fragment "document-store"
-  # Tags of an empty BlockNote body: the block structure and empty paragraphs
-  @empty_body_tags ["blockGroup", "blockContainer", "paragraph"]
 
   @doc """
   PubSub topic on which `{:document_updated, document_id, at}` is broadcast
@@ -61,7 +57,7 @@ defmodule Textexp.Document.YPersistence do
   def unbind(state, document_id, doc) do
     document = Document.get_document!(document_id)
 
-    if blank?(document.title) and empty_body?(doc) do
+    if blank?(document.title) and Body.empty?(doc) do
       timed(:delete, document_id, fn -> Document.destroy_document!(document) end)
 
       Phoenix.PubSub.broadcast(
@@ -81,8 +77,8 @@ defmodule Textexp.Document.YPersistence do
 
   @impl true
   @doc """
-  Saves the document's snapshot if it was modified since the last save; does
-  nothing otherwise.
+  Saves the document's snapshot, and the excerpt of its body, if it was
+  modified since the last save; does nothing otherwise.
   """
   def flush(%{dirty: false} = state, _document_id, _doc), do: state
 
@@ -93,7 +89,7 @@ defmodule Textexp.Document.YPersistence do
       timed(:save, document_id, fn ->
         document_id
         |> Document.get_document!()
-        |> Document.save_snapshot!(snapshot)
+        |> Document.save_snapshot!(snapshot, %{excerpt: Body.excerpt(doc)})
       end)
 
     Phoenix.PubSub.broadcast(
@@ -106,16 +102,6 @@ defmodule Textexp.Document.YPersistence do
   end
 
   defp blank?(title), do: is_nil(title) or String.trim(title) == ""
-
-  # The body is empty when it has no text and only holds empty paragraphs:
-  # any other block (image, table, divider...) counts as content.
-  defp empty_body?(doc) do
-    xml = doc |> Yex.Doc.get_xml_fragment(@body_fragment) |> Yex.XmlFragment.to_string()
-    tags = Regex.scan(~r/<([A-Za-z][\w-]*)/, xml, capture: :all_but_first) |> List.flatten()
-    text = Regex.replace(~r/<[^>]*>/, xml, "")
-
-    String.trim(text) == "" and Enum.all?(tags, &(&1 in @empty_body_tags))
-  end
 
   # Measures a database operation done in the DocServer, which blocks all the
   # document's clients meanwhile. Emits `[:textexp, :y_persistence, :stop]` and

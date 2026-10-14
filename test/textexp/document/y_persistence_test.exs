@@ -77,6 +77,18 @@ defmodule Textexp.Document.YPersistenceTest do
     assert loaded_text(document.id) == "hello"
   end
 
+  test "flush saves the excerpt of the body", %{document: document} do
+    doc = Yex.Doc.new()
+    state = YPersistence.bind(%{}, document.id, doc)
+    update = body_update([{"heading", "Title"}, {"paragraph", ""}, {"paragraph", "Body"}])
+    Yex.apply_update(doc, update)
+    state = YPersistence.update_v1(state, update, document.id, doc)
+
+    YPersistence.flush(state, document.id, doc)
+
+    assert Document.get_document!(document.id).excerpt == "Title\nBody"
+  end
+
   test "flush does nothing when nothing changed", %{document: document} do
     doc = Yex.Doc.new()
     state = YPersistence.bind(%{}, document.id, doc)

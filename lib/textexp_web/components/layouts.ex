@@ -43,9 +43,17 @@ defmodule TextexpWeb.Layouts do
     ~H"""
     <header class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
+        <%!-- href (full reload): the BlockNote editor of a document page must not
+             outlive it --%>
+        <a
+          id="documents-link"
+          href={~p"/documents"}
+          class="group flex w-fit items-center gap-2 rounded-lg px-1 py-1 transition-colors duration-150 hover:bg-base-200"
+        >
+          <span class="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary transition-transform duration-150 group-hover:scale-105">
+            <.icon name="hero-document-text" class="size-5" />
+          </span>
+          <span class="text-sm font-semibold tracking-tight">textexp</span>
         </a>
       </div>
       <div class="flex-none">

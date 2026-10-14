@@ -10,28 +10,28 @@ defmodule TextexpWeb.DocumentLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_user={@current_user} full_width>
-      <%= if @document do %>
+      <%= if @live_action == :index do %>
+        <.document_list streams={@streams} />
+      <% else %>
         <link phx-track-static rel="stylesheet" href={~p"/assets/js/blocknote.css"} />
         <script defer phx-track-static type="text/javascript" src={~p"/assets/js/blocknote.js"}>
         </script>
-      <% end %>
-      <div class="drawer lg:drawer-open min-h-[calc(100vh-4rem)]">
-        <input id="sidebar-drawer" type="checkbox" class="drawer-toggle" />
+        <div class="drawer lg:drawer-open min-h-[calc(100vh-4rem)]">
+          <input id="sidebar-drawer" type="checkbox" class="drawer-toggle" />
 
-        <div class="drawer-content flex flex-col">
-          <%!-- Open button: only visible on small screens --%>
-          <div class="p-2 lg:hidden">
-            <label
-              id="sidebar-open"
-              for="sidebar-drawer"
-              aria-label="Ouvrir le menu"
-              class="btn btn-square btn-ghost drawer-button"
-            >
-              <.icon name="hero-bars-3" class="size-5" />
-            </label>
-          </div>
+          <div class="drawer-content flex flex-col">
+            <%!-- Open button: only visible on small screens --%>
+            <div class="p-2 lg:hidden">
+              <label
+                id="sidebar-open"
+                for="sidebar-drawer"
+                aria-label="Ouvrir le menu"
+                class="btn btn-square btn-ghost drawer-button"
+              >
+                <.icon name="hero-bars-3" class="size-5" />
+              </label>
+            </div>
 
-          <%= if @document do %>
             <%!-- The title shares the background, font and margins of the BlockNote editor (light theme) --%>
             <div class="flex flex-1 flex-col bg-white font-['Inter',sans-serif] text-[#3f3f3f]">
               <div class="document-header px-[54px] pt-12 pb-2">
@@ -101,47 +101,102 @@ defmodule TextexpWeb.DocumentLive do
                 <div id="editor" hidden></div>
               </div>
             </div>
-          <% else %>
-            <div id="no-document" class="flex flex-1 flex-col items-center justify-center gap-4 p-8">
-              <.icon name="hero-document-text" class="size-12 opacity-30" />
-              <p class="text-base-content/60">Choisissez un document ou créez-en un.</p>
-              <button id="new-document-empty" class="btn btn-primary" phx-click="new_document">
+          </div>
+
+          <div class="drawer-side z-20">
+            <label for="sidebar-drawer" aria-label="Fermer le menu" class="drawer-overlay"></label>
+            <div class="flex min-h-full w-64 flex-col bg-base-200 p-4">
+              <button
+                id="new-document"
+                class="btn btn-ghost btn-sm mb-2 justify-start"
+                phx-click="new_document"
+              >
                 <.icon name="hero-plus" class="size-4" /> Nouveau document
               </button>
-            </div>
-          <% end %>
-        </div>
-
-        <div class="drawer-side z-20">
-          <label for="sidebar-drawer" aria-label="Fermer le menu" class="drawer-overlay"></label>
-          <div class="flex min-h-full w-64 flex-col bg-base-200 p-4">
-            <button
-              id="new-document"
-              class="btn btn-ghost btn-sm mb-2 justify-start"
-              phx-click="new_document"
-            >
-              <.icon name="hero-plus" class="size-4" /> Nouveau document
-            </button>
-            <%!-- href links (full reload): the BlockNote editor is only
+              <%!-- href links (full reload): the BlockNote editor is only
                  initialized once, on page load. --%>
-            <ul id="documents" class="menu w-full p-0" phx-update="stream">
-              <li id="documents-empty" class="hidden only:block px-3 py-2 text-sm opacity-60">
-                Aucun document
-              </li>
-              <li :for={{id, document} <- @streams.documents} id={id}>
-                <.link
-                  href={~p"/documents/#{document.id}"}
-                  class={[@document && @document.id == document.id && "menu-active"]}
-                >
-                  <.icon name="hero-document-text" class="size-4" />
-                  <span class="truncate">{document.title || "Sans titre"}</span>
-                </.link>
-              </li>
-            </ul>
+              <ul id="documents" class="menu w-full p-0" phx-update="stream">
+                <li id="documents-empty" class="hidden only:block px-3 py-2 text-sm opacity-60">
+                  Aucun document
+                </li>
+                <li :for={{id, document} <- @streams.documents} id={id}>
+                  <.link
+                    href={~p"/documents/#{document.id}"}
+                    class={[@document.id == document.id && "menu-active"]}
+                  >
+                    <.icon name="hero-document-text" class="size-4" />
+                    <span class="truncate">{document.title || "Sans titre"}</span>
+                  </.link>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
-      </div>
+      <% end %>
     </Layouts.app>
+    """
+  end
+
+  attr :streams, :map, required: true
+
+  defp document_list(assigns) do
+    ~H"""
+    <div id="documents-page" class="mx-auto w-full max-w-3xl px-4 py-10 sm:py-14">
+      <%!-- Shaped like a document card, highlighted. Outside the stream so that
+           the empty state below keeps working. --%>
+      <button
+        id="new-document"
+        type="button"
+        phx-click="new_document"
+        class="group flex w-full items-center gap-4 rounded-box border border-primary/30 bg-primary/5 px-5 py-4 text-left transition duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/10 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary phx-click-loading:pointer-events-none phx-click-loading:opacity-60"
+      >
+        <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-content transition-transform duration-150 group-hover:scale-110">
+          <.icon name="hero-plus" class="size-5" />
+        </span>
+        <span class="flex flex-col">
+          <span class="text-base font-semibold text-primary">Nouveau document</span>
+          <span class="text-sm text-base-content/60">Commencer une page vierge</span>
+        </span>
+      </button>
+
+      <%!-- Sorted by last update, most recent first. href links (full reload): the
+           BlockNote editor is only initialized once, on page load. --%>
+      <ul id="documents" class="mt-3 flex flex-col gap-3" phx-update="stream">
+        <li
+          id="documents-empty"
+          class="hidden only:block rounded-box border border-dashed border-base-300 px-4 py-10 text-center text-sm text-base-content/60"
+        >
+          Aucun document
+        </li>
+        <li :for={{id, document} <- @streams.documents} id={id}>
+          <.link
+            href={~p"/documents/#{document.id}"}
+            class="group block rounded-box border border-base-300 bg-base-100 px-5 py-4 transition duration-150 ease-out hover:-translate-y-0.5 hover:border-base-content/20 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <div class="flex items-baseline justify-between gap-4">
+              <h2 class={[
+                "truncate text-base font-semibold",
+                if(document.title, do: "text-base-content", else: "text-base-content/40")
+              ]}>
+                {document.title || "Sans titre"}
+              </h2>
+              <time
+                datetime={DateTime.to_iso8601(document.last_update)}
+                class="shrink-0 text-xs tabular-nums text-base-content/50"
+              >
+                {Calendar.strftime(document.last_update, "%d/%m/%Y %H:%M")} UTC
+              </time>
+            </div>
+            <p
+              :if={document.excerpt}
+              class="mt-1.5 line-clamp-3 whitespace-pre-line text-sm leading-relaxed text-base-content/70"
+            >
+              {document.excerpt}
+            </p>
+          </.link>
+        </li>
+      </ul>
+    </div>
     """
   end
 
@@ -150,7 +205,11 @@ defmodule TextexpWeb.DocumentLive do
       Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.documents_topic())
     end
 
-    documents = Document.list_documents!(query: [sort: [last_update: :desc]])
+    documents =
+      Document.list_documents!(
+        query: [select: [:title, :excerpt, :updated_at], sort: [last_update: :desc]],
+        load: [:last_update]
+      )
 
     {:ok,
      socket
