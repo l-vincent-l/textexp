@@ -35,10 +35,12 @@ defmodule TextexpWeb.DocumentLiveTest do
       {:ok, view, _html} = live(conn, ~p"/documents")
       assert has_element?(view, "#new-document")
 
-      assert {:error, {:redirect, %{to: "/documents/" <> id}}} =
-               view |> element("#new-document") |> render_click()
+      view |> element("#new-document") |> render_click()
+      assert "/documents/" <> id = assert_patch(view)
 
       assert {:ok, _} = Document.get_document(id)
+      assert has_element?(view, "#document-editor-#{id}")
+      assert has_element?(view, "#documents-#{id} a.menu-active")
     end
 
     test "the list has no sidebar and shows each document's title and excerpt",
@@ -79,10 +81,11 @@ defmodule TextexpWeb.DocumentLiveTest do
       document = Document.create_document!(%{}, actor: user)
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
 
-      assert has_element?(view, "#root[data-document-id='#{document.id}']")
+      editor = "#document-editor-#{document.id}[phx-hook='DocumentEditor']"
+      assert has_element?(view, "#{editor}[data-document-id='#{document.id}']")
       assert has_element?(view, "#documents-link[href='/documents']")
-      assert has_element?(view, "#root #document-skeleton")
-      assert has_element?(view, "#root #editor[hidden]")
+      assert has_element?(view, "#{editor} [data-skeleton]")
+      assert has_element?(view, "#{editor} [data-editor][hidden]")
 
       view |> element("#title-form") |> render_change(%{"title" => "Mon document"})
 
@@ -146,7 +149,37 @@ defmodule TextexpWeb.DocumentLiveTest do
         {:document_deleted, document.id}
       )
 
-      assert_redirect(view, ~p"/documents")
+      assert_patch(view, ~p"/documents")
+    end
+
+    test "opening a document from the list patches to it with the sidebar",
+         %{conn: conn, user: user} do
+      document = Document.create_document!(%{title: "Notes"}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents")
+
+      view |> element("#documents-#{document.id} a") |> render_click()
+      assert_patch(view, ~p"/documents/#{document.id}")
+
+      assert has_element?(view, "#document-editor-#{document.id}")
+      assert has_element?(view, "#documents-#{document.id} a.menu-active", "Notes")
+    end
+
+    test "switching documents moves the editor, the active item and the viewer",
+         %{conn: conn, user: user} do
+      first = Document.create_document!(%{title: "First"}, actor: user)
+      second = Document.create_document!(%{title: "Second"}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{first.id}")
+      assert [_] = TextexpWeb.Presence.list_users("viewers:#{first.id}")
+
+      view |> element("#documents-#{second.id} a") |> render_click()
+      assert_patch(view, ~p"/documents/#{second.id}")
+
+      assert has_element?(view, "#document-editor-#{second.id}")
+      refute has_element?(view, "#document-editor-#{first.id}")
+      assert has_element?(view, "#documents-#{second.id} a.menu-active")
+      refute has_element?(view, "#documents-#{first.id} a.menu-active")
+      assert has_element?(view, "#viewers-#{user.id}")
+      assert TextexpWeb.Presence.list_users("viewers:#{first.id}") == []
     end
 
     test "an unknown document redirects to the list", %{conn: conn} do

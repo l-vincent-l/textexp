@@ -43,18 +43,16 @@ defmodule TextexpWeb.Layouts do
     ~H"""
     <header class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
-        <%!-- href (full reload): the BlockNote editor of a document page must not
-             outlive it --%>
-        <a
+        <.link
           id="documents-link"
-          href={~p"/documents"}
+          navigate={~p"/documents"}
           class="group flex w-fit items-center gap-2 rounded-lg px-1 py-1 transition-colors duration-150 hover:bg-base-200"
         >
           <span class="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary transition-transform duration-150 group-hover:scale-105">
             <.icon name="hero-document-text" class="size-5" />
           </span>
           <span class="text-sm font-semibold tracking-tight">textexp</span>
-        </a>
+        </.link>
       </div>
       <div class="flex-none">
         <ul class="flex flex-column px-1 space-x-4 items-center">

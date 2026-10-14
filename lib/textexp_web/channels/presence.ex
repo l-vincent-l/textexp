@@ -44,6 +44,10 @@ defmodule TextexpWeb.Presence do
   def list_users(topic), do: list(topic) |> Enum.map(fn {_id, presence} -> presence end)
   @impl YPhoenix.Presence
   def track_user(topic, name, params), do: track(self(), topic, name, params)
+  def untrack_user(topic, name), do: untrack(self(), topic, name)
+
   @impl YPhoenix.Presence
   def subscribe(topic), do: Phoenix.PubSub.subscribe(Textexp.PubSub, "proxy:#{topic}")
+
+  def unsubscribe(topic), do: Phoenix.PubSub.unsubscribe(Textexp.PubSub, "proxy:#{topic}")
 end

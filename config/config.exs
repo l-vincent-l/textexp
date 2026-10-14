@@ -94,7 +94,7 @@ config :esbuild,
   version: "0.25.4",
   textexp: [
     args:
-      ~w(app=js/app.js blocknote=js/blocknote/blocknote.tsx --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=. --loader:.woff=file --loader:.woff2=file --conditions=style),
+      ~w(app=js/app.js blocknote=js/blocknote/blocknote.css --bundle --format=esm --splitting --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=. --loader:.woff=file --loader:.woff2=file --conditions=style),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]

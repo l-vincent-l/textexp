@@ -24,13 +24,23 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/textexp"
 import topbar from "../vendor/topbar"
+import {DocumentEditor} from "./document_editor"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {...colocatedHooks, DocumentEditor},
 })
+
+// Firefox closes the websocket as soon as a full page navigation starts
+// (clicking a plain link), while LiveView only learns that the page is left on
+// "pagehide", once the next page arrives. Meanwhile it takes the closed socket
+// for a network error and shows the "Attempting to reconnect" flash. Flag the
+// page as unloaded as soon as the navigation starts, as LiveView did before it
+// moved to "pagehide". If the navigation is cancelled, LiveView reloads the
+// page when the socket reconnects.
+window.addEventListener("beforeunload", _e => { liveSocket.unloaded = true })
 
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})

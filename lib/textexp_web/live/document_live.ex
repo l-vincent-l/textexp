@@ -14,8 +14,6 @@ defmodule TextexpWeb.DocumentLive do
         <.document_list streams={@streams} />
       <% else %>
         <link phx-track-static rel="stylesheet" href={~p"/assets/js/blocknote.css"} />
-        <script defer phx-track-static type="text/javascript" src={~p"/assets/js/blocknote.js"}>
-        </script>
         <div class="drawer lg:drawer-open min-h-[calc(100vh-4rem)]">
           <input id="sidebar-drawer" type="checkbox" class="drawer-toggle" />
 
@@ -76,17 +74,21 @@ defmodule TextexpWeb.DocumentLive do
                 </div>
                 <div class="divider"></div>
               </div>
-              <%!-- Managed by blocknote.tsx: LiveView must not touch it. The skeleton
-                   is removed and the editor shown once the content is loaded. --%>
+              <%!-- Managed by the DocumentEditor hook: LiveView must not touch it. Its
+                   id changes with the document so that LiveView replaces it, and the
+                   hook mounts a new editor. The skeleton is removed and the editor
+                   shown once the content is loaded. No ids inside: morphdom would
+                   move the previous editor's nodes into the new element. --%>
               <div
-                id="root"
+                id={"document-editor-#{@document.id}"}
                 class="flex-1 w-full"
+                phx-hook="DocumentEditor"
                 phx-update="ignore"
                 data-document-id={@document.id}
                 data-user-name={@current_user.email}
               >
                 <div
-                  id="document-skeleton"
+                  data-skeleton
                   role="status"
                   aria-label="Chargement du document"
                   class="flex flex-col gap-3 px-[54px] py-1 motion-safe:animate-pulse"
@@ -98,7 +100,7 @@ defmodule TextexpWeb.DocumentLive do
                   <div class="mt-4 h-4 w-11/12 rounded bg-[#ececec]"></div>
                   <div class="h-4 w-2/3 rounded bg-[#ececec]"></div>
                 </div>
-                <div id="editor" hidden></div>
+                <div data-editor hidden></div>
               </div>
             </div>
           </div>
@@ -113,15 +115,13 @@ defmodule TextexpWeb.DocumentLive do
               >
                 <.icon name="hero-plus" class="size-4" /> Nouveau document
               </button>
-              <%!-- href links (full reload): the BlockNote editor is only
-                 initialized once, on page load. --%>
               <ul id="documents" class="menu w-full p-0" phx-update="stream">
                 <li id="documents-empty" class="hidden only:block px-3 py-2 text-sm opacity-60">
                   Aucun document
                 </li>
                 <li :for={{id, document} <- @streams.documents} id={id}>
                   <.link
-                    href={~p"/documents/#{document.id}"}
+                    patch={~p"/documents/#{document.id}"}
                     class={[@document.id == document.id && "menu-active"]}
                   >
                     <.icon name="hero-document-text" class="size-4" />
@@ -159,8 +159,7 @@ defmodule TextexpWeb.DocumentLive do
         </span>
       </button>
 
-      <%!-- Sorted by last update, most recent first. href links (full reload): the
-           BlockNote editor is only initialized once, on page load. --%>
+      <%!-- Sorted by last update, most recent first --%>
       <ul id="documents" class="mt-3 flex flex-col gap-3" phx-update="stream">
         <li
           id="documents-empty"
@@ -170,7 +169,7 @@ defmodule TextexpWeb.DocumentLive do
         </li>
         <li :for={{id, document} <- @streams.documents} id={id}>
           <.link
-            href={~p"/documents/#{document.id}"}
+            patch={~p"/documents/#{document.id}"}
             class="group block rounded-box border border-base-300 bg-base-100 px-5 py-4 transition duration-150 ease-out hover:-translate-y-0.5 hover:border-base-content/20 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
             <div class="flex items-baseline justify-between gap-4">
@@ -205,41 +204,31 @@ defmodule TextexpWeb.DocumentLive do
       Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.documents_topic())
     end
 
-    documents =
-      Document.list_documents!(
-        query: [select: [:title, :excerpt, :updated_at], sort: [last_update: :desc]],
-        load: [:last_update]
-      )
-
     {:ok,
      socket
-     |> assign(document: nil, title_form: nil)
+     |> assign(document: nil, title_form: nil, documents_view: nil)
      |> stream(:viewers, [])
-     |> stream(:documents, documents)}
+     |> stream(:documents, [])}
   end
+
+  # Documents are opened with live patches: the same process goes from the list
+  # to a document and from one document to another.
+  def handle_params(%{"id" => id}, _uri, %{assigns: %{document: %{id: id}}} = socket),
+    do: {:noreply, socket}
 
   def handle_params(%{"id" => id}, _uri, socket) do
     case Document.get_document(id, load: [:last_update]) do
       {:ok, document} ->
-        if connected?(socket) do
-          Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.topic(document.id))
+        previous = socket.assigns.document
 
-          user = socket.assigns.current_user
-          Presence.subscribe(viewers_topic(document.id))
+        socket =
+          socket
+          |> leave_document()
+          |> load_documents()
+          |> open_document(document)
+          |> mark_active(previous, document)
 
-          Presence.track_user(viewers_topic(document.id), user.id, %{
-            id: user.id,
-            email: user.email
-          })
-        end
-
-        {:noreply,
-         assign(socket,
-           document: document,
-           page_title: document.title || "Sans titre",
-           last_update: document.last_update,
-           title_form: to_form(%{"title" => document.title})
-         )}
+        {:noreply, socket}
 
       {:error, _} ->
         {:noreply,
@@ -249,10 +238,83 @@ defmodule TextexpWeb.DocumentLive do
     end
   end
 
-  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+  def handle_params(_params, _uri, socket) do
+    {:noreply,
+     socket
+     |> leave_document()
+     |> assign(document: nil, title_form: nil, page_title: "Documents")
+     |> load_documents()}
+  end
 
-  def handle_info({:document_updated, _document_id, at}, socket) do
-    {:noreply, assign(socket, last_update: at)}
+  # The list and the sidebar render the documents stream in different
+  # elements: a stream's items only live in the DOM, so it is filled again when
+  # going from one to the other.
+  defp load_documents(%{assigns: %{documents_view: view, live_action: view}} = socket),
+    do: socket
+
+  defp load_documents(socket) do
+    documents =
+      Document.list_documents!(
+        query: [select: [:title, :excerpt, :updated_at], sort: [last_update: :desc]],
+        load: [:last_update]
+      )
+
+    socket
+    |> assign(documents_view: socket.assigns.live_action)
+    |> stream(:documents, documents, reset: true)
+  end
+
+  defp open_document(socket, document) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.topic(document.id))
+
+      user = socket.assigns.current_user
+      Presence.subscribe(viewers_topic(document.id))
+      Presence.track_user(viewers_topic(document.id), user.id, %{id: user.id, email: user.email})
+    end
+
+    socket
+    |> assign(
+      document: document,
+      page_title: document.title || "Sans titre",
+      last_update: document.last_update,
+      title_form: to_form(%{"title" => document.title})
+    )
+    |> stream(:viewers, if(connected?(socket), do: viewers(document.id), else: []), reset: true)
+  end
+
+  defp leave_document(%{assigns: %{document: nil}} = socket), do: socket
+
+  defp leave_document(socket) do
+    document_id = socket.assigns.document.id
+
+    if connected?(socket) do
+      Phoenix.PubSub.unsubscribe(Textexp.PubSub, YPersistence.topic(document_id))
+      Presence.unsubscribe(viewers_topic(document_id))
+      Presence.untrack_user(viewers_topic(document_id), socket.assigns.current_user.id)
+    end
+
+    socket
+  end
+
+  # The sidebar's active item depends on the open document: re-insert the items
+  # of the previous and new documents so that they are rendered again.
+  defp mark_active(socket, previous, document) do
+    if previous && previous.id != document.id do
+      socket
+      |> stream_insert(:documents, previous)
+      |> stream_insert(:documents, document)
+    else
+      socket
+    end
+  end
+
+  def handle_info({:document_updated, document_id, at}, socket) do
+    if socket.assigns.document && socket.assigns.document.id == document_id do
+      {:noreply, assign(socket, last_update: at)}
+    else
+      {:noreply, socket}
+    end
   end
 
   # An empty document was left and deleted (see YPersistence).
@@ -260,14 +322,19 @@ defmodule TextexpWeb.DocumentLive do
     socket = stream_delete_by_dom_id(socket, :documents, "documents-#{document_id}")
 
     if socket.assigns.document && socket.assigns.document.id == document_id do
-      {:noreply, push_navigate(socket, to: ~p"/documents")}
+      {:noreply, push_patch(socket, to: ~p"/documents")}
     else
       {:noreply, socket}
     end
   end
 
+  # May still arrive for a document just left: the viewers of the open one are
+  # listed again.
   def handle_info({Presence, {event, _user}}, socket) when event in [:join, :leave] do
-    {:noreply, stream(socket, :viewers, viewers(socket.assigns.document.id), reset: true)}
+    case socket.assigns.document do
+      nil -> {:noreply, socket}
+      document -> {:noreply, stream(socket, :viewers, viewers(document.id), reset: true)}
+    end
   end
 
   defp viewers_topic(document_id), do: "viewers:#{document_id}"
@@ -283,7 +350,14 @@ defmodule TextexpWeb.DocumentLive do
 
   def handle_event("new_document", _params, socket) do
     document = Document.create_document!(%{}, actor: socket.assigns.current_user)
-    {:noreply, redirect(socket, to: ~p"/documents/#{document.id}")}
+
+    # From the list, the sidebar is loaded with the new document when it opens.
+    socket =
+      if socket.assigns.live_action == :show,
+        do: stream_insert(socket, :documents, document, at: 0),
+        else: socket
+
+    {:noreply, push_patch(socket, to: ~p"/documents/#{document.id}")}
   end
 
   def handle_event("update_title", %{"title" => title}, socket) do

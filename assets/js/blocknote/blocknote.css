@@ -1,0 +1,4 @@
+/* Styles of the BlockNote editor (blocknote.tsx), built as a separate bundle:
+   esbuild does not load the CSS of a module imported on demand. */
+@import "@blocknote/core/fonts/inter.css";
+@import "@blocknote/mantine/style.css";
