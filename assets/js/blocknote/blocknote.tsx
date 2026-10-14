@@ -36,6 +36,27 @@ const provider = new PhoenixChannelProvider(
   ydoc,
 );
 const persistence = new IndexeddbPersistence(`document:${documentId}`, ydoc);
+const fragment = ydoc.getXmlFragment("document-store");
+
+const editorNode = document.getElementById("editor");
+if (!editorNode) {
+  throw new Error("editor element not found");
+}
+
+// Replaces the loading skeleton with the editor once the content is there:
+// synced with the server, or loaded from IndexedDB when this browser already
+// has a copy (e.g. offline).
+function showEditor() {
+  document.getElementById("document-skeleton")?.remove();
+  editorNode!.hidden = false;
+}
+
+provider.on("sync", (synced: boolean) => {
+  if (synced) showEditor();
+});
+persistence.whenSynced.then(() => {
+  if (fragment.length > 0) showEditor();
+});
 
 const usercolors = [
   "#30bced",
@@ -55,7 +76,7 @@ export default function App() {
     withCollaboration({
     collaboration: {
       provider,
-      fragment: ydoc.getXmlFragment("document-store"),
+      fragment,
       user: {
         name: domNode.dataset.userName ?? "",
         color: myColor,
@@ -69,5 +90,5 @@ export default function App() {
   return <BlockNoteView editor={editor} theme="light" />;
 }
 
-const root = createRoot(domNode);
+const root = createRoot(editorNode);
 root.render(<App />);

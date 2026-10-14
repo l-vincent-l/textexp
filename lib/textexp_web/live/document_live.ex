@@ -76,7 +76,8 @@ defmodule TextexpWeb.DocumentLive do
                 </div>
                 <div class="divider"></div>
               </div>
-              <%!-- React manages this node: LiveView must not touch it --%>
+              <%!-- Managed by blocknote.tsx: LiveView must not touch it. The skeleton
+                   is removed and the editor shown once the content is loaded. --%>
               <div
                 id="root"
                 class="flex-1 w-full"
@@ -84,6 +85,20 @@ defmodule TextexpWeb.DocumentLive do
                 data-document-id={@document.id}
                 data-user-name={@current_user.email}
               >
+                <div
+                  id="document-skeleton"
+                  role="status"
+                  aria-label="Chargement du document"
+                  class="flex flex-col gap-3 px-[54px] py-1 motion-safe:animate-pulse"
+                >
+                  <div class="h-4 w-3/4 rounded bg-[#ececec]"></div>
+                  <div class="h-4 w-full rounded bg-[#ececec]"></div>
+                  <div class="h-4 w-5/6 rounded bg-[#ececec]"></div>
+                  <div class="h-4 w-2/5 rounded bg-[#ececec]"></div>
+                  <div class="mt-4 h-4 w-11/12 rounded bg-[#ececec]"></div>
+                  <div class="h-4 w-2/3 rounded bg-[#ececec]"></div>
+                </div>
+                <div id="editor" hidden></div>
               </div>
             </div>
           <% else %>

@@ -46,6 +46,8 @@ defmodule TextexpWeb.DocumentLiveTest do
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
 
       assert has_element?(view, "#root[data-document-id='#{document.id}']")
+      assert has_element?(view, "#root #document-skeleton")
+      assert has_element?(view, "#root #editor[hidden]")
 
       view |> element("#title-form") |> render_change(%{"title" => "Mon document"})
 
