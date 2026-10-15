@@ -88,6 +88,19 @@ defmodule Textexp.Document.BodyTest do
     end
   end
 
+  describe "text/1" do
+    test "has one line per block holding text, nested ones included" do
+      doc =
+        doc_with([
+          {"heading", "Title", [], %{"level" => "1"}},
+          {"paragraph", ""},
+          {"bulletListItem", "Item", [{"bulletListItem", "Sub item"}]}
+        ])
+
+      assert Body.text(doc) == "Title\nItem\nSub item"
+    end
+  end
+
   describe "to_markdown/1" do
     test "is empty for an empty body" do
       assert Body.to_markdown(Yex.Doc.new()) == ""

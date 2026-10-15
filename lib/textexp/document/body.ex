@@ -29,11 +29,7 @@ defmodule Textexp.Document.Body do
   """
   def excerpt(doc) do
     doc
-    |> fragment()
-    |> Yex.XmlFragment.children()
-    |> Stream.flat_map(&lines/1)
-    |> Stream.map(&String.trim/1)
-    |> Stream.reject(&(&1 == ""))
+    |> text_lines()
     |> Enum.take(@excerpt_lines)
     |> Enum.join("\n")
     |> String.slice(0, @excerpt_length)
@@ -41,6 +37,20 @@ defmodule Textexp.Document.Body do
       "" -> nil
       excerpt -> excerpt
     end
+  end
+
+  @doc """
+  The text of the body, without formatting: one line per block holding text.
+  """
+  def text(doc), do: doc |> text_lines() |> Enum.join("\n")
+
+  defp text_lines(doc) do
+    doc
+    |> fragment()
+    |> Yex.XmlFragment.children()
+    |> Stream.flat_map(&lines/1)
+    |> Stream.map(&String.trim/1)
+    |> Stream.reject(&(&1 == ""))
   end
 
   @doc """
@@ -228,7 +238,7 @@ defmodule Textexp.Document.Body do
   end
 
   defp plain_text(element) do
-    for %Yex.XmlText{} = text <- Yex.XmlElement.children(element), into: "", do: text(text)
+    for %Yex.XmlText{} = text <- Yex.XmlElement.children(element), into: "", do: xml_text(text)
   end
 
   # Marks are applied inside out; the spaces around a formatted part are kept
@@ -263,7 +273,7 @@ defmodule Textexp.Document.Body do
   # One line per element holding text, in document order.
   defp lines(%Yex.XmlElement{} = element) do
     children = element |> Yex.XmlElement.children() |> Enum.to_list()
-    texts = for %Yex.XmlText{} = text <- children, do: text(text)
+    texts = for %Yex.XmlText{} = text <- children, do: xml_text(text)
     own = if texts == [], do: [], else: [Enum.join(texts)]
 
     own ++ Enum.flat_map(children, &lines/1)
@@ -272,7 +282,7 @@ defmodule Textexp.Document.Body do
   defp lines(_text), do: []
 
   # Plain text, without formatting or embeds (mentions, images...).
-  defp text(xml_text) do
+  defp xml_text(xml_text) do
     for %{insert: insert} when is_binary(insert) <- Yex.XmlText.to_delta(xml_text),
         into: "",
         do: insert

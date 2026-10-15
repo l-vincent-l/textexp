@@ -70,7 +70,10 @@ defmodule TextexpWeb.DocumentListLive do
             {if @searching?, do: "Aucun résultat", else: "Aucun document"}
           </li>
           <li :for={{id, document} <- @streams.documents} id={id}>
-            <.document_card document={document} />
+            <.document_card
+              document={document}
+              snippet={Ash.Resource.get_metadata(document, :snippet)}
+            />
           </li>
         </ul>
       </div>

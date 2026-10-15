@@ -64,8 +64,13 @@ defmodule Textexp.Document.Document do
     # also changes on rename).
     calculate :last_update, :utc_datetime_usec, expr(updated_at)
 
-    calculate :markdown, :string, Textexp.Document.Markdown do
+    calculate :markdown, :string, {Textexp.Document.BodyContent, format: :markdown} do
       description "The body as Markdown, from the saved snapshot."
+      public? true
+    end
+
+    calculate :text, :string, {Textexp.Document.BodyContent, format: :text} do
+      description "The text of the body, one line per block, from the saved snapshot."
       public? true
     end
   end

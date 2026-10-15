@@ -13,9 +13,12 @@ defmodule TextexpWeb.DocumentComponents do
   A document of a list, as a card linking to it: its title, last update and
   excerpt (the first lines of its body).
 
-  The document needs its `title`, `excerpt` and `last_update`.
+  The document needs its `title`, `excerpt` and `last_update`. In search
+  results, `snippet` replaces the excerpt: the fragment of the body where the
+  searched words appear, as `Textexp.Document.Snippet` segments.
   """
   attr :document, :map, required: true
+  attr :snippet, :list, default: nil
 
   def document_card(assigns) do
     ~H"""
@@ -37,8 +40,14 @@ defmodule TextexpWeb.DocumentComponents do
           {Calendar.strftime(@document.last_update, "%d/%m/%Y %H:%M")} UTC
         </time>
       </div>
+      <%!-- On one line: whitespace between the segments would show --%>
       <p
-        :if={@document.excerpt}
+        :if={@snippet}
+        class="mt-1.5 line-clamp-3 text-sm leading-relaxed text-base-content/70"
+        phx-no-format
+      ><%= for {kind, text} <- @snippet do %><mark :if={kind == :match} class="rounded-sm bg-warning/40 px-0.5 font-medium text-base-content">{text}</mark><span :if={kind == :text}>{text}</span><% end %></p>
+      <p
+        :if={!@snippet && @document.excerpt}
         class="mt-1.5 line-clamp-3 whitespace-pre-line text-sm leading-relaxed text-base-content/70"
       >
         {@document.excerpt}

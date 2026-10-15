@@ -130,6 +130,31 @@ defmodule TextexpWeb.DocumentListLiveTest do
       assert has_element?(view, "#documents-#{dogs.id}")
     end
 
+    test "search results show where the words appear in the body", %{conn: conn, user: user} do
+      body = Yex.Doc.new()
+
+      body
+      |> Yex.Doc.get_xml_fragment("document-store")
+      |> Yex.XmlFragment.push(
+        Yex.XmlElementPrelim.new("blockGroup", [
+          Yex.XmlElementPrelim.new("blockContainer", [
+            Yex.XmlElementPrelim.new("paragraph", [Yex.XmlTextPrelim.from("Le chat dort")])
+          ])
+        ])
+      )
+
+      document =
+        %{title: "Notes"}
+        |> Document.create_document!(actor: user)
+        |> Document.save_snapshot!(Yex.encode_state_as_update!(body), %{excerpt: "Le chat dort"})
+
+      {:ok, view, _html} = live(conn, ~p"/documents")
+      view |> element("#search-form") |> render_change(%{"query" => "chat"})
+      render_async(view)
+
+      assert has_element?(view, "#documents-#{document.id} p mark", "chat")
+    end
+
     test "a search without match shows that nothing was found", %{conn: conn, user: user} do
       document = Document.create_document!(%{title: "Les chats"}, actor: user)
       {:ok, view, _html} = live(conn, ~p"/documents")
