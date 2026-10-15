@@ -22,6 +22,10 @@ defmodule Textexp.Document.Document do
       change relate_actor(:owner)
     end
 
+    read :mine do
+      filter expr(owner_id == ^actor(:id))
+    end
+
     update :rename do
       accept [:title]
     end
@@ -59,5 +63,10 @@ defmodule Textexp.Document.Document do
     # The snapshot is rewritten on each save, so this is `updated_at` (which
     # also changes on rename).
     calculate :last_update, :utc_datetime_usec, expr(updated_at)
+
+    calculate :markdown, :string, Textexp.Document.Markdown do
+      description "The body as Markdown, from the saved snapshot."
+      public? true
+    end
   end
 end

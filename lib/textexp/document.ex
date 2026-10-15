@@ -12,9 +12,11 @@ defmodule Textexp.Document do
       define :create_document, action: :create
       define :get_document, action: :read, get_by: [:id]
       define :list_documents, action: :read
+      define :list_my_documents, action: :mine
       define :rename_document, action: :rename, args: [:title]
       define :save_snapshot, action: :save_snapshot, args: [:snapshot]
       define :destroy_document, action: :destroy
+      define_calculation :document_markdown, calculation: :markdown, args: [:_record]
     end
   end
 end

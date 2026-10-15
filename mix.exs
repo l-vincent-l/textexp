@@ -41,6 +41,7 @@ defmodule Textexp.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:tantivy_ex, "~> 0.4.1"},
       {:y_ex, "~> 0.6.0"},
       {:igniter, "~> 0.6", only: [:dev, :test]},
       {:bcrypt_elixir, "~> 3.0"},

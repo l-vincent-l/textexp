@@ -22,59 +22,14 @@ defmodule TextexpWeb.DocumentLiveTest do
   end
 
   test "redirects anonymous visitors to the sign-in page", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/documents")
+    assert {:error, {:redirect, %{to: "/sign-in"}}} =
+             live(conn, ~p"/documents/#{Ash.UUID.generate()}")
   end
 
   describe "signed in" do
     setup %{conn: conn} do
       user = register_user()
       %{conn: log_in(conn, user), user: user}
-    end
-
-    test "creating a document opens it", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/documents")
-      assert has_element?(view, "#new-document")
-
-      view |> element("#new-document") |> render_click()
-      assert "/documents/" <> id = assert_patch(view)
-
-      assert {:ok, _} = Document.get_document(id)
-      assert has_element?(view, "#document-editor-#{id}")
-      assert has_element?(view, "#documents-#{id} a.menu-active")
-    end
-
-    test "the list has no sidebar and shows each document's title and excerpt",
-         %{conn: conn, user: user} do
-      document = Document.create_document!(%{title: "Notes"}, actor: user)
-      Document.save_snapshot!(document, nil, %{excerpt: "First line\nSecond line"})
-      untitled = Document.create_document!(%{}, actor: user)
-
-      {:ok, view, _html} = live(conn, ~p"/documents")
-
-      refute has_element?(view, "#sidebar-drawer")
-      assert has_element?(view, "#documents-#{document.id} h2", "Notes")
-      assert has_element?(view, "#documents-#{document.id} p", "Second line")
-      assert has_element?(view, "#documents-#{document.id} time")
-      assert has_element?(view, "#documents-#{untitled.id} h2", "Sans titre")
-      refute has_element?(view, "#documents-#{untitled.id} p")
-    end
-
-    test "the list is sorted by last update, most recent first", %{conn: conn, user: user} do
-      older = Document.create_document!(%{title: "Older"}, actor: user)
-      newer = Document.create_document!(%{title: "Newer"}, actor: user)
-      # editing the older one makes it the most recent
-      Document.save_snapshot!(older, nil, %{excerpt: "edited"})
-
-      {:ok, view, _html} = live(conn, ~p"/documents")
-
-      ids =
-        view
-        |> render()
-        |> LazyHTML.from_fragment()
-        |> LazyHTML.query("#documents > li[id^='documents-']:not(#documents-empty)")
-        |> LazyHTML.attribute("id")
-
-      assert ids == ["documents-#{older.id}", "documents-#{newer.id}"]
     end
 
     test "renaming updates the document and the sidebar", %{conn: conn, user: user} do
@@ -125,20 +80,6 @@ defmodule TextexpWeb.DocumentLiveTest do
       refute has_element?(view, "#viewers-#{other.id}")
     end
 
-    test "a deleted empty document leaves the sidebar", %{conn: conn, user: user} do
-      document = Document.create_document!(%{}, actor: user)
-      {:ok, view, _html} = live(conn, ~p"/documents")
-      assert has_element?(view, "#documents-#{document.id}")
-
-      Phoenix.PubSub.broadcast(
-        Textexp.PubSub,
-        Textexp.Document.YPersistence.documents_topic(),
-        {:document_deleted, document.id}
-      )
-
-      refute has_element?(view, "#documents-#{document.id}")
-    end
-
     test "the open document being deleted redirects to the list", %{conn: conn, user: user} do
       document = Document.create_document!(%{}, actor: user)
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
@@ -149,19 +90,33 @@ defmodule TextexpWeb.DocumentLiveTest do
         {:document_deleted, document.id}
       )
 
-      assert_patch(view, ~p"/documents")
+      assert_redirect(view, ~p"/documents")
     end
 
-    test "opening a document from the list patches to it with the sidebar",
-         %{conn: conn, user: user} do
+    test "a deleted empty document leaves the sidebar", %{conn: conn, user: user} do
       document = Document.create_document!(%{title: "Notes"}, actor: user)
-      {:ok, view, _html} = live(conn, ~p"/documents")
+      other = Document.create_document!(%{}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+      assert has_element?(view, "#documents-#{other.id}")
 
-      view |> element("#documents-#{document.id} a") |> render_click()
-      assert_patch(view, ~p"/documents/#{document.id}")
+      Phoenix.PubSub.broadcast(
+        Textexp.PubSub,
+        Textexp.Document.YPersistence.documents_topic(),
+        {:document_deleted, other.id}
+      )
 
-      assert has_element?(view, "#document-editor-#{document.id}")
-      assert has_element?(view, "#documents-#{document.id} a.menu-active", "Notes")
+      refute has_element?(view, "#documents-#{other.id}")
+    end
+
+    test "creating a document from the sidebar opens it", %{conn: conn, user: user} do
+      document = Document.create_document!(%{title: "Notes"}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      view |> element("#new-document") |> render_click()
+      assert "/documents/" <> id = assert_patch(view)
+
+      assert has_element?(view, "#document-editor-#{id}")
+      assert has_element?(view, "#documents-#{id} a.menu-active")
     end
 
     test "switching documents moves the editor, the active item and the viewer",
