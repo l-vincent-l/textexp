@@ -55,10 +55,41 @@ defmodule TextexpWeb.DocumentLiveTest do
       Phoenix.PubSub.broadcast(
         Textexp.PubSub,
         Textexp.Document.YPersistence.topic(document.id),
-        {:document_updated, document.id, ~U[2030-01-02 03:04:05.000000Z]}
+        {:document_updated, document.id, ~U[2030-01-02 03:04:05.000000Z], nil}
       )
 
       assert has_element?(view, "#last-update", "02/01/2030 03:04:05")
+    end
+
+    test "shows the title given by a save to an untitled document",
+         %{conn: conn, user: user} do
+      document = Document.create_document!(%{}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      Phoenix.PubSub.broadcast(
+        Textexp.PubSub,
+        Textexp.Document.YPersistence.topic(document.id),
+        {:document_updated, document.id, DateTime.utc_now(), "Note du 01-02-2030"}
+      )
+
+      assert has_element?(view, "#document-title[value='Note du 01-02-2030']")
+      assert has_element?(view, "#documents-#{document.id}", "Note du 01-02-2030")
+      assert page_title(view) =~ "Note du 01-02-2030"
+    end
+
+    test "a save does not replace the title being typed", %{conn: conn, user: user} do
+      document = Document.create_document!(%{}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+      view |> element("#title-form") |> render_change(%{"title" => "Mon titre"})
+
+      # saved before the title was typed
+      Phoenix.PubSub.broadcast(
+        Textexp.PubSub,
+        Textexp.Document.YPersistence.topic(document.id),
+        {:document_updated, document.id, DateTime.utc_now(), "Note du 01-02-2030"}
+      )
+
+      assert has_element?(view, "#document-title[value='Mon titre']")
     end
 
     test "lists the people viewing the document", %{conn: conn, user: user} do

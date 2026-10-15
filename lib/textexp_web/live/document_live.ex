@@ -219,9 +219,9 @@ defmodule TextexpWeb.DocumentLive do
     end
   end
 
-  def handle_info({:document_updated, document_id, at}, socket) do
+  def handle_info({:document_updated, document_id, at, title}, socket) do
     if socket.assigns.document.id == document_id do
-      {:noreply, assign(socket, last_update: at)}
+      {:noreply, socket |> assign(last_update: at) |> put_saved_title(title)}
     else
       {:noreply, socket}
     end
@@ -242,6 +242,18 @@ defmodule TextexpWeb.DocumentLive do
   # listed again.
   def handle_info({Presence, {event, _user}}, socket) when event in [:join, :leave] do
     {:noreply, stream(socket, :viewers, viewers(socket.assigns.document.id), reset: true)}
+  end
+
+  # Shows the title given by the save to an untitled document. A title being
+  # typed is kept: the saved one may predate it.
+  defp put_saved_title(socket, title) do
+    shown = socket.assigns.title_form[:title].value
+
+    if (shown == nil or String.trim(shown) == "") and title != socket.assigns.document.title do
+      put_title(socket, %{socket.assigns.document | title: title})
+    else
+      socket
+    end
   end
 
   defp viewers_topic(document_id), do: "viewers:#{document_id}"
@@ -266,14 +278,16 @@ defmodule TextexpWeb.DocumentLive do
 
   def handle_event("update_title", %{"title" => title}, socket) do
     document = Document.rename_document!(socket.assigns.document, title)
+    {:noreply, put_title(socket, document)}
+  end
 
-    {:noreply,
-     socket
-     |> assign(
-       document: document,
-       page_title: document.title || "Sans titre",
-       title_form: to_form(%{"title" => document.title})
-     )
-     |> stream_insert(:documents, document)}
+  defp put_title(socket, document) do
+    socket
+    |> assign(
+      document: document,
+      page_title: document.title || "Sans titre",
+      title_form: to_form(%{"title" => document.title})
+    )
+    |> stream_insert(:documents, document)
   end
 end

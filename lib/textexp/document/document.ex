@@ -34,6 +34,24 @@ defmodule Textexp.Document.Document do
       description "Replaces the snapshot with the full Yjs state of the document, and its excerpt."
       require_atomic? false
       accept [:snapshot, :excerpt]
+
+      # A document saved without title, but with text, gets a dated one. Without
+      # text, it stays untitled so that it is deleted when left (see
+      # YPersistence.unbind).
+      change fn changeset, _context ->
+        title = Ash.Changeset.get_attribute(changeset, :title)
+        excerpt = Ash.Changeset.get_attribute(changeset, :excerpt)
+
+        if (title == nil or String.trim(title) == "") and excerpt != nil do
+          Ash.Changeset.force_change_attribute(
+            changeset,
+            :title,
+            "Notes du #{Date.utc_today() |> Calendar.strftime("%d-%m-%Y")}"
+          )
+        else
+          changeset
+        end
+      end
     end
   end
 

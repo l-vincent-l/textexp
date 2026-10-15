@@ -119,7 +119,43 @@ defmodule Textexp.Document.YPersistenceTest do
     assert loaded_text(document.id) == "hello"
   end
 
-  test "flush broadcasts the save time on the document topic", %{document: document} do
+  describe "an untitled document" do
+    setup %{document: %{owner: owner}} do
+      document = Document.create_document!(%{}, actor: owner)
+      Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.topic(document.id))
+      %{document: document}
+    end
+
+    test "is saved with a dated title as soon as it has text", %{document: document} do
+      document_id = document.id
+      doc = Yex.Doc.new()
+      state = YPersistence.bind(%{}, document_id, doc)
+
+      update = body_update([{"paragraph", "Hello"}])
+      Yex.apply_update(doc, update)
+      # no flush needed
+      YPersistence.update_v1(state, update, document_id, doc)
+
+      title = "Notes du #{Calendar.strftime(Date.utc_today(), "%d-%m-%Y")}"
+      assert Document.get_document!(document_id).title == title
+      assert_receive {:document_updated, ^document_id, _at, ^title}
+    end
+
+    test "stays untitled without text", %{document: document} do
+      doc = Yex.Doc.new()
+      state = YPersistence.bind(%{}, document.id, doc)
+
+      update = body_update([{"paragraph", ""}])
+      Yex.apply_update(doc, update)
+      state = YPersistence.update_v1(state, update, document.id, doc)
+      YPersistence.flush(state, document.id, doc)
+
+      assert Document.get_document!(document.id).title == nil
+    end
+  end
+
+  test "flush broadcasts the save time and title on the document topic",
+       %{document: document} do
     Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.topic(document.id))
     document_id = document.id
 
@@ -129,7 +165,7 @@ defmodule Textexp.Document.YPersistenceTest do
     YPersistence.flush(state, document.id, doc)
 
     updated_at = Document.get_document!(document.id).updated_at
-    assert_receive {:document_updated, ^document_id, ^updated_at}
+    assert_receive {:document_updated, ^document_id, ^updated_at, "Notes"}
   end
 
   test "last_update is the time of the last save", %{document: document} do

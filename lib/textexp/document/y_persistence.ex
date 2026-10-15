@@ -31,8 +31,9 @@ defmodule Textexp.Document.YPersistence do
   @slow_ms 200
 
   @doc """
-  PubSub topic on which `{:document_updated, document_id, at}` is broadcast
-  each time the document is saved.
+  PubSub topic on which `{:document_updated, document_id, at, title}` is
+  broadcast each time the document is saved; saving gives a title to a
+  document that has none.
   """
   def topic(document_id), do: "document:#{document_id}"
 
@@ -50,7 +51,7 @@ defmodule Textexp.Document.YPersistence do
       Yex.Doc.transaction(doc, @origin, fn -> Yex.apply_update(doc, document.snapshot) end)
     end
 
-    Map.put(state, :dirty, false)
+    Map.merge(state, %{dirty: false, untitled?: blank?(document.title)})
   end
 
   @impl true
@@ -73,7 +74,18 @@ defmodule Textexp.Document.YPersistence do
   end
 
   @impl true
-  def update_v1(state, _update, _document_id, _doc), do: Map.put(state, :dirty, true)
+  def update_v1(state, _update, document_id, doc) do
+    state = Map.put(state, :dirty, true)
+
+    # The first text of an untitled document is saved at once, which gives it
+    # a title (see the save_snapshot action) without waiting for the next
+    # flush.
+    if state[:untitled?] and Body.excerpt(doc) != nil do
+      state |> flush(document_id, doc) |> Map.put(:untitled?, false)
+    else
+      state
+    end
+  end
 
   @impl true
   @doc """
@@ -95,7 +107,7 @@ defmodule Textexp.Document.YPersistence do
     Phoenix.PubSub.broadcast(
       Textexp.PubSub,
       topic(document_id),
-      {:document_updated, document_id, document.updated_at}
+      {:document_updated, document_id, document.updated_at, document.title}
     )
 
     Map.put(state, :dirty, false)
