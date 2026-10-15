@@ -107,5 +107,38 @@ defmodule TextexpWeb.DocumentListLiveTest do
       assert has_element?(view, "#document-editor-#{document.id}")
       assert has_element?(view, "#documents-#{document.id} a.menu-active", "Notes")
     end
+
+    test "searching lists the matching documents, and clearing it lists all of them",
+         %{conn: conn, user: user} do
+      cats = Document.create_document!(%{title: "Les chats"}, actor: user)
+      dogs = Document.create_document!(%{title: "Les chiens"}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents")
+
+      view |> element("#search-form") |> render_change(%{"query" => "chats"})
+      # waits for the index, built for the first search
+      render_async(view)
+
+      assert has_element?(view, "#documents-#{cats.id}")
+      refute has_element?(view, "#documents-#{dogs.id}")
+
+      view |> element("#search-form") |> render_change(%{"query" => "chiens"})
+      assert has_element?(view, "#documents-#{dogs.id}")
+      refute has_element?(view, "#documents-#{cats.id}")
+
+      view |> element("#search-form") |> render_change(%{"query" => ""})
+      assert has_element?(view, "#documents-#{cats.id}")
+      assert has_element?(view, "#documents-#{dogs.id}")
+    end
+
+    test "a search without match shows that nothing was found", %{conn: conn, user: user} do
+      document = Document.create_document!(%{title: "Les chats"}, actor: user)
+      {:ok, view, _html} = live(conn, ~p"/documents")
+
+      view |> element("#search-form") |> render_change(%{"query" => "chats AND ("})
+      render_async(view)
+
+      refute has_element?(view, "#documents-#{document.id}")
+      assert has_element?(view, "#documents-empty", "Aucun résultat")
+    end
   end
 end

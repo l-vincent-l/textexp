@@ -36,9 +36,7 @@ defmodule TextexpWeb.Router do
       # If an authenticated user must *not* be present:
       # on_mount {TextexpWeb.LiveUserAuth, :live_no_user}
       live "/documents", DocumentListLive, :index
-      live "/documents/_search", SearchLive, :search
       live "/documents/:id", DocumentLive, :show
-      live "/search", SearchLive, :index
     end
   end
 

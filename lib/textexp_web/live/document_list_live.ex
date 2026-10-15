@@ -3,8 +3,9 @@ defmodule TextexpWeb.DocumentListLive do
 
   import TextexpWeb.DocumentComponents
 
+  alias Phoenix.LiveView.AsyncResult
   alias Textexp.Document
-  alias Textexp.Document.YPersistence
+  alias Textexp.Document.{Search, YPersistence}
 
   on_mount {TextexpWeb.LiveUserAuth, :live_user_required}
 
@@ -12,6 +13,37 @@ defmodule TextexpWeb.DocumentListLive do
     ~H"""
     <Layouts.app flash={@flash} current_user={@current_user} full_width>
       <div id="documents-page" class="mx-auto w-full max-w-3xl px-4 py-10 sm:py-14">
+        <.form
+          for={@search_form}
+          id="search-form"
+          phx-change="search"
+          phx-submit="search"
+          class="mb-3"
+        >
+          <label class="group flex items-center gap-3 rounded-box border border-base-300 bg-base-100 px-4 py-2.5 transition duration-150 focus-within:border-primary/50 focus-within:shadow-md">
+            <.icon
+              name="hero-magnifying-glass"
+              class="size-5 shrink-0 text-base-content/40 transition-colors group-focus-within:text-primary"
+            />
+            <input
+              id="search-query"
+              name="query"
+              type="search"
+              value={@search_form[:query].value}
+              placeholder="Rechercher dans les documents"
+              autocomplete="off"
+              phx-debounce="300"
+              class="grow bg-transparent text-base outline-none placeholder:text-base-content/40"
+            />
+            <span
+              :if={@index && @index.loading}
+              id="search-loading"
+              class="loading loading-spinner loading-sm text-base-content/40"
+              aria-label="Recherche en cours"
+            ></span>
+          </label>
+        </.form>
+
         <%!-- Shaped like a document card, highlighted. Outside the stream so that
              the empty state below keeps working. --%>
         <button
@@ -29,13 +61,13 @@ defmodule TextexpWeb.DocumentListLive do
           </span>
         </button>
 
-        <%!-- Sorted by last update, most recent first --%>
+        <%!-- Sorted by last update, most recent first; by relevance when searching --%>
         <ul id="documents" class="mt-3 flex flex-col gap-3" phx-update="stream">
           <li
             id="documents-empty"
             class="hidden only:block rounded-box border border-dashed border-base-300 px-4 py-10 text-center text-sm text-base-content/60"
           >
-            Aucun document
+            {if @searching?, do: "Aucun résultat", else: "Aucun document"}
           </li>
           <li :for={{id, document} <- @streams.documents} id={id}>
             <.document_card document={document} />
@@ -51,16 +83,15 @@ defmodule TextexpWeb.DocumentListLive do
       Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.documents_topic())
     end
 
-    documents =
-      Document.list_documents!(
-        query: [select: [:title, :excerpt, :updated_at], sort: [last_update: :desc]],
-        load: [:last_update]
-      )
-
     {:ok,
      socket
-     |> assign(page_title: "Documents")
-     |> stream(:documents, documents)}
+     |> assign(
+       page_title: "Documents",
+       search_form: to_form(%{"query" => ""}),
+       searching?: false,
+       index: nil
+     )
+     |> stream(:documents, list_documents())}
   end
 
   # An empty document was left and deleted (see YPersistence).
@@ -71,5 +102,68 @@ defmodule TextexpWeb.DocumentListLive do
   def handle_event("new_document", _params, socket) do
     document = Document.create_document!(%{}, actor: socket.assigns.current_user)
     {:noreply, push_navigate(socket, to: ~p"/documents/#{document.id}")}
+  end
+
+  # The search index is only built for the first search, in the background: it
+  # then stays in memory until the page is left.
+  def handle_event("search", %{"query" => query}, socket) do
+    socket = assign(socket, search_form: to_form(%{"query" => query}))
+
+    socket =
+      case socket.assigns.index do
+        nil when query != "" ->
+          socket
+          |> assign(index: AsyncResult.loading())
+          |> start_async(:index, &Search.new_index/0)
+
+        _ ->
+          show_results(socket)
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_async(:index, {:ok, {:ok, index}}, socket) do
+    {:noreply,
+     socket
+     |> assign(index: AsyncResult.ok(socket.assigns.index, index))
+     |> show_results()}
+  end
+
+  def handle_async(:index, result, socket) do
+    reason = with {:ok, {:error, reason}} <- result, do: reason
+
+    {:noreply,
+     socket
+     |> assign(index: AsyncResult.failed(socket.assigns.index, reason))
+     |> put_flash(:error, "La recherche n'est pas disponible")}
+  end
+
+  # The documents matching the query, or all of them without query. While the
+  # index is loading, the list is left as it is.
+  defp show_results(socket) do
+    query = String.trim(socket.assigns.search_form[:query].value)
+
+    case {query, socket.assigns.index} do
+      {"", _index} ->
+        socket
+        |> assign(searching?: false)
+        |> stream(:documents, list_documents(), reset: true)
+
+      {query, %AsyncResult{ok?: true, result: index}} ->
+        socket
+        |> assign(searching?: true)
+        |> stream(:documents, Search.search(index, query), reset: true)
+
+      _loading_or_failed ->
+        socket
+    end
+  end
+
+  defp list_documents do
+    Document.list_documents!(
+      query: [select: [:title, :excerpt, :updated_at], sort: [last_update: :desc]],
+      load: [:last_update]
+    )
   end
 end
