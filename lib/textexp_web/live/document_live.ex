@@ -1,6 +1,7 @@
 defmodule TextexpWeb.DocumentLive do
   use TextexpWeb, :live_view
 
+  alias Textexp.Accounts
   alias Textexp.Document
   alias Textexp.Document.YPersistence
   alias TextexpWeb.Presence
@@ -82,6 +83,7 @@ defmodule TextexpWeb.DocumentLive do
               phx-hook="DocumentEditor"
               phx-update="ignore"
               data-document-id={@document.id}
+              data-user-id={@current_user.id}
               data-user-name={@current_user.email}
             >
               <div
@@ -274,6 +276,15 @@ defmodule TextexpWeb.DocumentLive do
      socket
      |> stream_insert(:documents, document, at: 0)
      |> push_patch(to: ~p"/documents/#{document.id}")}
+  end
+
+  def handle_event("resolve_users", %{"ids" => ids}, socket) do
+    users =
+      for user <- Accounts.list_users_by_ids!(ids, actor: socket.assigns.current_user) do
+        %{id: user.id, username: to_string(user.email), avatarUrl: ""}
+      end
+
+    {:reply, %{users: users}, socket}
   end
 
   def handle_event("update_title", %{"title" => title}, socket) do

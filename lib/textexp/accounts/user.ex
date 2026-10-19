@@ -81,6 +81,12 @@ defmodule Textexp.Accounts.User do
       get_by :email
     end
 
+    read :by_ids do
+      description "The users of the given ids, e.g. the authors of comments"
+      argument :ids, {:array, :uuid}, allow_nil?: false
+      filter expr(id in ^arg(:ids))
+    end
+
     create :sign_in_with_magic_link do
       description "Sign in or register a user with magic link."
 
@@ -276,6 +282,11 @@ defmodule Textexp.Accounts.User do
   policies do
     bypass AshAuthentication.Checks.AshAuthenticationInteraction do
       authorize_if always()
+    end
+
+    # Any signed-in user may see the others, as they see all documents.
+    policy action(:by_ids) do
+      authorize_if actor_present()
     end
   end
 

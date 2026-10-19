@@ -6,12 +6,18 @@ import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
 import * as Y from "yjs";
 
-import { withCollaboration } from "@blocknote/core/yjs";
+import { withCollaboration, YjsThreadStore } from "@blocknote/core/yjs";
+import {
+  CommentsExtension,
+  DefaultThreadStoreAuth,
+  ThreadStore,
+} from "@blocknote/core/comments";
 
 import { createRoot } from "react-dom/client";
 import { PhoenixChannelProvider } from "y-phoenix-channel";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Socket } from "phoenix";
+import { User } from "@blocknote/core";
 
 const usercolors = [
   "#30bced",
@@ -25,7 +31,7 @@ const usercolors = [
 ];
 
 const myColor = usercolors[Math.floor(Math.random() * usercolors.length)];
-
+type ResolveUsers = (ids: string[]) => Promise<User[]>;
 // One socket for the whole page, shared by the editors of the documents opened
 // one after the other.
 let socket: Socket | null = null;
@@ -46,9 +52,17 @@ type EditorProps = {
   provider: PhoenixChannelProvider;
   fragment: Y.XmlFragment;
   userName: string;
+  threadStore: ThreadStore;
+  resolveUsers: ResolveUsers;
 };
 
-function Editor({ provider, fragment, userName }: EditorProps) {
+function Editor({
+  provider,
+  fragment,
+  userName,
+  threadStore,
+  resolveUsers,
+}: EditorProps) {
   const editor = useCreateBlockNote(
     withCollaboration({
       collaboration: {
@@ -56,6 +70,8 @@ function Editor({ provider, fragment, userName }: EditorProps) {
         fragment,
         user: { name: userName, color: myColor },
       },
+      // resolveUsers gives the names of the comments' authors
+      extensions: [CommentsExtension({ threadStore, resolveUsers })],
     }),
   );
 
@@ -64,13 +80,17 @@ function Editor({ provider, fragment, userName }: EditorProps) {
 
 /**
  * Mounts the editor of the document described by `el` (`data-document-id`,
- * `data-user-name`), which holds the loading skeleton and the hidden editor
- * node. Returns the function that tears it all down.
+ * `data-user-id`, `data-user-name`), which holds the loading skeleton and the
+ * hidden editor node. `resolveUsers` gives the users of the given ids. Returns
+ * the function that tears it all down.
  */
-export function mountEditor(el: HTMLElement): () => void {
-  const documentId = el.dataset.documentId;
-  if (!documentId) {
-    throw new Error("data-document-id missing on the editor element");
+export function mountEditor(
+  el: HTMLElement,
+  { resolveUsers }: { resolveUsers: ResolveUsers },
+): () => void {
+  const { documentId, userId } = el.dataset;
+  if (!documentId || !userId) {
+    throw new Error("data-document-id or data-user-id missing on the editor element");
   }
 
   const editorNode = el.querySelector<HTMLElement>("[data-editor]");
@@ -86,6 +106,12 @@ export function mountEditor(el: HTMLElement): () => void {
   );
   const persistence = new IndexeddbPersistence(`document:${documentId}`, ydoc);
   const fragment = ydoc.getXmlFragment("document-store");
+  // The comments are kept in the document itself, synced along with it.
+  const threadStore = new YjsThreadStore(
+    userId,
+    ydoc.getMap("threads"),
+    new DefaultThreadStoreAuth(userId, "editor"),
+  );
 
   // Replaces the loading skeleton with the editor once the content is there:
   // synced with the server, or loaded from IndexedDB when this browser already
@@ -108,6 +134,8 @@ export function mountEditor(el: HTMLElement): () => void {
       provider={provider}
       fragment={fragment}
       userName={el.dataset.userName ?? ""}
+      threadStore={threadStore}
+      resolveUsers={resolveUsers}
     />,
   );
 

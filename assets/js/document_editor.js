@@ -4,13 +4,19 @@
 // document is opened: the old editor is destroyed and a new one mounted.
 export const DocumentEditor = {
   mounted() {
-    this.unmount = import("./blocknote/blocknote").then(({mountEditor}) =>
-      this.isDestroyed ? null : mountEditor(this.el)
+    const resolveUsers = ids =>
+      new Promise(resolve =>
+        this.pushEvent("resolve_users", {ids}, reply => resolve(reply.users))
+      )
+
+
+    this.mounting = import("./blocknote/blocknote").then(({ mountEditor }) =>
+      this.isDestroyed ? null : mountEditor(this.el, {resolveUsers})
     )
   },
 
   destroyed() {
     this.isDestroyed = true
-    this.unmount.then(unmount => unmount && unmount())
+    this.mounting.then(unmount => unmount && unmount())
   },
 }
