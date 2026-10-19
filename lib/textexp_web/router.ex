@@ -15,6 +15,10 @@ defmodule TextexpWeb.Router do
     plug :load_from_session
   end
 
+  pipeline :dashboard do
+    plug :dashboard_auth
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
     plug :load_from_bearer
@@ -80,19 +84,21 @@ defmodule TextexpWeb.Router do
   #   pipe_through :api
   # end
 
-  # Enable LiveDashboard and Swoosh mailbox preview in development
-  if Application.compile_env(:textexp, :dev_routes) do
-    # If you want to use the LiveDashboard in production, you should put
-    # it behind authentication and allow only admins to access it.
-    # If your application does not have an admins-only section yet,
-    # you can use Plug.BasicAuth to set up some basic authentication
-    # as long as you are also using SSL (which you should anyway).
-    import Phoenix.LiveDashboard.Router
+  # The LiveDashboard, also in production to look into the running app (memory,
+  # processes), behind HTTP basic auth (see dashboard_auth/2).
+  import Phoenix.LiveDashboard.Router
 
+  scope "/admin" do
+    pipe_through [:browser, :dashboard]
+
+    live_dashboard "/dashboard", metrics: TextexpWeb.Telemetry
+  end
+
+  # Enable Swoosh mailbox preview in development
+  if Application.compile_env(:textexp, :dev_routes) do
     scope "/dev" do
       pipe_through :browser
 
-      live_dashboard "/dashboard", metrics: TextexpWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
   end
@@ -104,6 +110,22 @@ defmodule TextexpWeb.Router do
       pipe_through :browser
 
       ash_admin "/"
+    end
+  end
+
+  # Asks for the credentials of the :dashboard_auth config. Without them (e.g.
+  # unset in production), the dashboard is not found; with `false`, it is open.
+  defp dashboard_auth(conn, _opts) do
+    case Application.get_env(:textexp, :dashboard_auth) do
+      false ->
+        conn
+
+      [username: username, password: password]
+      when is_binary(username) and username != "" and is_binary(password) and password != "" ->
+        Plug.BasicAuth.basic_auth(conn, username: username, password: password)
+
+      _missing ->
+        conn |> send_resp(:not_found, "Not Found") |> halt()
     end
   end
 end

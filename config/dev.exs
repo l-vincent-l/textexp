@@ -50,6 +50,9 @@ config :textexp, TextexpWeb.Endpoint,
 # different ports.
 
 # Enable dev routes for dashboard and mailbox
+# The LiveDashboard is open in development.
+config :textexp, :dashboard_auth, false
+
 config :textexp, dev_routes: true, token_signing_secret: "pnDqW8PjnLqxvVO3NTDaJRdGtNO/Ofyo"
 
 # Do not include metadata nor timestamps in development logs
