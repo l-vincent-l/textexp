@@ -1,0 +1,36 @@
+# Fly.io deployment: one machine, stopped when no one is connected and started
+# again on the next request. The database is a SQLite file on the volume,
+# replicated to Tigris by Litestream (see litestream.yml and bin/fly_start).
+app = "textexp"
+primary_region = "cdg"
+# The stop signal goes to Litestream, which forwards it to the release; enough
+# time for the DocServers to flush and for Litestream's last sync.
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  build-target = "fly"
+
+[env]
+  PHX_HOST = "textexp.fly.dev"
+  PORT = "4000"
+  DATABASE_PATH = "/data/textexp.db"
+  # Modules are loaded on first use instead of all at boot (embedded mode):
+  # the deps (Ash above all) hold ~4500 modules, most of them never called,
+  # whose code and JIT output would take ~160 MB of the machine's memory.
+  RELEASE_MODE = "interactive"
+
+[mounts]
+  source = "textexp_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

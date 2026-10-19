@@ -1,0 +1,15 @@
+#!/bin/sh
+# Entry point of the Fly.io image, run as root: gives the volume to nobody, then,
+# as nobody, restores the database from S3 when the volume holds none, and
+# starts the release (migrations first) under Litestream. Litestream forwards
+# the stop signal to the release, and syncs one last time once it has exited.
+set -eu
+
+data_dir="$(dirname -- "$DATABASE_PATH")"
+chown nobody:nogroup "$data_dir"
+
+as_nobody="setpriv --reuid=nobody --regid=nogroup --clear-groups"
+export HOME="$data_dir"
+
+$as_nobody litestream restore -if-db-not-exists -if-replica-exists "$DATABASE_PATH"
+exec $as_nobody litestream replicate -exec "/bin/sh -c '/app/bin/migrate && exec /app/bin/server'"

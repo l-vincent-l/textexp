@@ -78,7 +78,7 @@ RUN mix release
 
 # start a new build stage so that the final image will only contain
 # the compiled release and other runtime necessities
-FROM ${RUNNER_IMAGE} AS final
+FROM ${RUNNER_IMAGE} AS runtime
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses6 locales ca-certificates \
@@ -100,6 +100,19 @@ ENV MIX_ENV="prod"
 
 # Only copy the final release from the build stage
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/textexp ./
+
+# Fly.io image (`build-target = "fly"` in fly.toml): a local SQLite file on a
+# volume, replicated to S3 (Tigris) by Litestream. It starts as root to hand the
+# volume, mounted as root, over to nobody; bin/fly_start then drops privileges.
+FROM runtime AS fly
+
+COPY --from=docker.io/litestream/litestream:0.5.17-scratch /usr/local/bin/litestream /usr/local/bin/litestream
+COPY litestream.yml /etc/litestream.yml
+
+CMD ["/app/bin/fly_start"]
+
+# Default image: the database is Bunny Database (see config/runtime.exs).
+FROM runtime AS final
 
 USER nobody
 

@@ -41,35 +41,44 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
-  # Bunny Database (libSQL). URL and token are found in the Bunny dashboard,
-  # under Database > Access.
-  database_url =
-    System.get_env("BUNNY_DATABASE_URL") ||
-      raise """
-      environment variable BUNNY_DATABASE_URL is missing.
-      For example: libsql://<database-id>.lite.bunnydb.net
-      """
+  # Credentials of the LiveDashboard (/admin/dashboard), asked through HTTP basic
+  # auth. Without them, the dashboard is not served.
+  config :textexp, :dashboard_auth,
+    username: System.get_env("DASHBOARD_USER"),
+    password: System.get_env("DASHBOARD_PASSWORD")
 
-  database_auth_token =
-    System.get_env("BUNNY_DATABASE_AUTH_TOKEN") ||
-      raise "environment variable BUNNY_DATABASE_AUTH_TOKEN is missing."
+  # Two setups:
+  #
+  #   * BUNNY_DATABASE_URL set: Bunny Database (libSQL). URL and token are found
+  #     in the Bunny dashboard, under Database > Access. When DATABASE_PATH is
+  #     also set, a local embedded replica is kept in sync with Bunny (faster
+  #     reads, requires persistent storage). Otherwise every query goes over
+  #     the network.
+  #   * DATABASE_PATH alone: a local SQLite file (Fly.io, on a volume),
+  #     replicated to S3 by Litestream, which runs next to the release.
+  database_opts =
+    case {System.get_env("BUNNY_DATABASE_URL"), System.get_env("DATABASE_PATH")} do
+      {nil, nil} ->
+        raise """
+        environment variable BUNNY_DATABASE_URL or DATABASE_PATH is missing.
+        For example: libsql://<database-id>.lite.bunnydb.net or /data/textexp.db
+        """
 
-  # When DATABASE_PATH is set, a local embedded replica is kept in sync with
-  # Bunny (faster reads, requires persistent storage). Otherwise every query
-  # goes over the network.
-  replica_opts =
-    case System.get_env("DATABASE_PATH") do
-      nil -> []
-      path -> [database: path, sync: true]
+      {nil, path} ->
+        [database: path]
+
+      {database_url, path} ->
+        database_auth_token =
+          System.get_env("BUNNY_DATABASE_AUTH_TOKEN") ||
+            raise "environment variable BUNNY_DATABASE_AUTH_TOKEN is missing."
+
+        replica_opts = if path, do: [database: path, sync: true], else: []
+        [uri: database_url, auth_token: database_auth_token] ++ replica_opts
     end
 
   config :textexp,
          Textexp.SqliteRepo,
-         [
-           uri: database_url,
-           auth_token: database_auth_token,
-           pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
-         ] ++ replica_opts
+         [pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")] ++ database_opts
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
