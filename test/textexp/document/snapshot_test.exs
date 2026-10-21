@@ -1,17 +1,17 @@
-defmodule Textexp.Types.BlobTest do
+defmodule Textexp.Document.SnapshotTest do
   use Textexp.DataCase
 
   alias Textexp.Document
 
-  # Valid UTF-8 containing a NUL byte: stored as TEXT and truncated at the NUL
-  # by ecto_libsql without `Textexp.Types.Blob`.
+  # Valid UTF-8 containing a NUL byte: stored as TEXT, SQLite would truncate it
+  # at the NUL (it happened with ecto_libsql, about one Yjs update in 50).
   @utf8_with_nul <<"abc", 0, "def">>
 
   setup do
     user =
       Textexp.Accounts.User
       |> Ash.Changeset.for_create(:register_with_password, %{
-        email: "blob-#{System.unique_integer([:positive])}@example.com",
+        email: "snapshot-#{System.unique_integer([:positive])}@example.com",
         password: "a-long-password",
         password_confirmation: "a-long-password"
       })

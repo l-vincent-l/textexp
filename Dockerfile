@@ -111,7 +111,7 @@ COPY litestream.yml /etc/litestream.yml
 
 CMD ["/app/bin/fly_start"]
 
-# Default image: the database is Bunny Database (see config/runtime.exs).
+# Default image: the SQLite file at DATABASE_PATH, without replication.
 FROM runtime AS final
 
 USER nobody

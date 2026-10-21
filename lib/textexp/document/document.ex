@@ -62,7 +62,7 @@ defmodule Textexp.Document.Document do
       public? true
     end
 
-    attribute :snapshot, Textexp.Types.Blob
+    attribute :snapshot, :binary
 
     attribute :excerpt, :string do
       public? true

@@ -51,12 +51,6 @@ defmodule Textexp.MixProject do
       {:ash_admin, "~> 1.0"},
       {:ash_phoenix, "~> 2.0"},
       {:ash_sqlite, "~> 0.2.19"},
-      # Hex 0.9.1 is incompatible with ecto_sql 3.14 (Connection.insert/8),
-      # fixed on main but not released yet. Switch back to Hex once > 0.9.1 is out.
-      {:ecto_libsql,
-       github: "ocean/ecto_libsql",
-       ref: "dd83b4587c778dde52d8bee7c615801f2d08bcd8",
-       override: true},
       {:ash, "~> 3.0"},
       {:phoenix, "~> 1.8.15"},
       {:phoenix_ecto, "~> 4.5"},
