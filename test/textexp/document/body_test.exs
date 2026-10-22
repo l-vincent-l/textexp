@@ -107,6 +107,18 @@ defmodule Textexp.Document.BodyTest do
       assert Body.to_markdown(doc_with([{"paragraph", ""}])) == ""
     end
 
+    # BlockNote stores the level as a number, which y_ex reads as a float.
+    test "reads the heading level as a number or as text" do
+      doc =
+        doc_with([
+          {"heading", "One", [], %{"level" => 1}},
+          {"heading", "Two", [], %{"level" => 2.0}},
+          {"heading", "Three", [], %{"level" => "3"}}
+        ])
+
+      assert Body.to_markdown(doc) == "# One\n\n## Two\n\n### Three"
+    end
+
     test "separates blocks with a blank line and skips empty paragraphs" do
       doc =
         doc_with([

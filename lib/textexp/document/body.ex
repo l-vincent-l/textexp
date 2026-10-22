@@ -101,8 +101,8 @@ defmodule Textexp.Document.Body do
   end
 
   defp block("heading", block, _number) do
-    level = block |> Yex.XmlElement.get_attribute("level") |> to_string()
-    text_block(:block, String.duplicate("#", String.to_integer(level)) <> " ", block)
+    level = block |> Yex.XmlElement.get_attribute("level") |> heading_level()
+    text_block(:block, String.duplicate("#", level) <> " ", block)
   end
 
   defp block("bulletListItem", block, _number), do: text_block(:list, "- ", block)
@@ -215,6 +215,20 @@ defmodule Textexp.Document.Body do
         Enum.map_join([header, separator | body], "\n", &("| " <> Enum.join(&1, " | ") <> " |"))
     end
   end
+
+  # BlockNote stores the level as a number, which y_ex reads as a float (or an
+  # integer before y_ex 0.13); older documents may hold it as text.
+  defp heading_level(level) when is_integer(level), do: level
+  defp heading_level(level) when is_float(level), do: trunc(level)
+
+  defp heading_level(level) when is_binary(level) do
+    case Integer.parse(level) do
+      {level, _rest} -> level
+      :error -> 1
+    end
+  end
+
+  defp heading_level(_level), do: 1
 
   # Text of an element with its formatting as Markdown.
   defp inline(%Yex.XmlElement{} = element) do
