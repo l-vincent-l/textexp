@@ -60,6 +60,7 @@ defmodule Textexp.MixProject do
       {:ash_admin, "~> 1.0"},
       {:ash_phoenix, "~> 2.0"},
       {:ash_sqlite, "~> 0.2.19"},
+      {:ecto_hrana, github: "l-vincent-l/ecto_hrana"},
       {:ash, "~> 3.0"},
       {:phoenix, "~> 1.8.15"},
       {:phoenix_ecto, "~> 4.5"},
