@@ -17,10 +17,6 @@ kill_timeout = "30s"
   PHX_HOST = "textexp.fly.dev"
   PORT = "4000"
   DATABASE_PATH = "/data/textexp.db"
-  # Modules are loaded on first use instead of all at boot (embedded mode):
-  # the deps (Ash above all) hold ~4500 modules, most of them never called,
-  # whose code and JIT output would take ~160 MB of the machine's memory.
-  RELEASE_MODE = "interactive"
 
 [mounts]
   source = "textexp_data"

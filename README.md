@@ -28,10 +28,9 @@ default, or `hrana`), see `config/config.exs`. On Bunny, the container reads
 (`.github/workflows/deploy-bunny.yml`) needs a `BUNNY_API_KEY` repository
 secret.
 
-To compare them, `scripts/compare-hosts [path] [requests]` measures the
-response times of both, and each `/admin/dashboard` shows the query times
-measured by the server (page Metrics, `textexp.sqlite_repo.query`), once
-`DASHBOARD_USER` and `DASHBOARD_PASSWORD` are set.
+To compare them, each `/admin/dashboard` shows the query times measured by
+the server (page Metrics, `textexp.sqlite_repo.query`), once `DASHBOARD_USER`
+and `DASHBOARD_PASSWORD` are set.
 
 Locally, against a libSQL server:
 

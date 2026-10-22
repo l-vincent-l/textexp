@@ -104,6 +104,11 @@ RUN chown nobody /app
 # set runner ENV
 ENV MIX_ENV="prod"
 
+# Modules are loaded on first use instead of all at boot (embedded mode): the
+# deps (Ash above all) hold ~4500 modules, most of them never called, whose
+# code and JIT output would take ~270 MB more memory.
+ENV RELEASE_MODE="interactive"
+
 ARG DATABASE_ADAPTER=sqlite3
 ENV DATABASE_ADAPTER=${DATABASE_ADAPTER}
 
