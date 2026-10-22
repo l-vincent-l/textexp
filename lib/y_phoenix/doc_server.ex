@@ -98,7 +98,7 @@ defmodule YPhoenix.DocServer do
   end
 
   @impl true
-  def handle_awareness_change(
+  def handle_awareness_update(
         awareness,
         %{removed: removed, added: added, updated: updated},
         origin,

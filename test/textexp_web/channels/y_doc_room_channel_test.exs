@@ -88,6 +88,21 @@ defmodule TextexpWeb.YDocRoomChannelTest do
     assert saved_text(socket, document) == "hello"
   end
 
+  # A Yjs client renews its unchanged awareness every 15 s, and the others
+  # forget it if it is not renewed within 30 s.
+  test "awareness renewals are relayed", %{owner: owner, document: document} do
+    {:ok, _reply, socket} = join_as(owner, document.id)
+    {:ok, client} = Yex.Awareness.new(Yex.Doc.new())
+
+    for _renewal <- 1..2 do
+      Yex.Awareness.set_local_state(client, %{"user" => "owner"})
+      {:ok, update} = Yex.Awareness.encode_update(client, [Yex.Awareness.client_id(client)])
+      push(socket, "yjs", {:binary, Yex.Sync.message_encode!({:awareness, update})})
+
+      assert_broadcast "yjs", {:binary, <<1, _::binary>>}, 500
+    end
+  end
+
   test "a viewer joins, but its edits are dropped", %{owner: owner, document: document} do
     viewer = register_user()
     Document.set_document_members!(document, [%{id: viewer.id, role: :viewer}], actor: owner)

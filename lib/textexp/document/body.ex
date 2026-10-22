@@ -87,7 +87,7 @@ defmodule Textexp.Document.Body do
   # list, 0 if the previous block is not one.
   defp block_container(container, number) do
     [block | nested] = container |> Yex.XmlElement.children() |> Enum.to_list()
-    tag = tag(block)
+    tag = Yex.XmlElement.get_tag(block)
     number = if tag == "numberedListItem", do: number + 1, else: 0
 
     case block(tag, block, number) do
@@ -214,13 +214,6 @@ defmodule Textexp.Document.Body do
         separator = Enum.map(header, fn _ -> "---" end)
         Enum.map_join([header, separator | body], "\n", &("| " <> Enum.join(&1, " | ") <> " |"))
     end
-  end
-
-  # Yex.XmlElement has no function returning its tag: read it from its XML.
-  # Called on blocks only, whose XML is their inline content.
-  defp tag(element) do
-    [_, tag] = Regex.run(~r/^<([A-Za-z][\w-]*)/, Yex.XmlElement.to_string(element))
-    tag
   end
 
   # Text of an element with its formatting as Markdown.
