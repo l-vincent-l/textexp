@@ -58,6 +58,17 @@ config :spark,
     ]
   ]
 
+# The database: a local SQLite file by default, or a libSQL server (Bunny
+# Database) with DATABASE_ADAPTER=hrana. Chosen at compile time, as the repo's
+# adapter (after changing it: `mix compile --force`); config/runtime.exs reads
+# the same variable to configure it.
+config :textexp,
+  repo_adapter:
+    if(System.get_env("DATABASE_ADAPTER") == "hrana",
+      do: Ecto.Adapters.Hrana,
+      else: Ecto.Adapters.SQLite3
+    )
+
 config :textexp,
   ecto_repos: [Textexp.SqliteRepo],
   generators: [timestamp_type: :utc_datetime],

@@ -9,6 +9,36 @@ Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 
 Ready to run in production? Please [check our deployment guides](https://phoenix.hexdocs.pm/deployment.html).
 
+## Deployment
+
+Two deployments run the same code, to compare them. Both are started by hand.
+
+| | Fly.io | Bunny |
+|---|---|---|
+| Application | one machine, suspended when idle (`fly.toml`) | Magic Container `textexp` |
+| Database | SQLite file on a volume | Bunny Database, through `ecto_hrana` |
+| Backup | Litestream, to Tigris | Bunny's |
+| Image | `fly` target, built by Fly | `final` target with `DATABASE_ADAPTER=hrana`, on ghcr.io |
+| Deploy | `fly deploy` | Actions > Deploy to Bunny > Run workflow |
+| URL | https://textexp.fly.dev | https://mc-3gejc6ktt2.bunny.run |
+
+The database is chosen at compile time by `DATABASE_ADAPTER` (`sqlite3`, the
+default, or `hrana`), see `config/config.exs`. On Bunny, the container reads
+`BUNNY_DATABASE_URL` and `BUNNY_DATABASE_AUTH_TOKEN`; the workflow
+(`.github/workflows/deploy-bunny.yml`) needs a `BUNNY_API_KEY` repository
+secret.
+
+To compare them, `scripts/compare-hosts [path] [requests]` measures the
+response times of both, and each `/admin/dashboard` shows the query times
+measured by the server (page Metrics, `textexp.sqlite_repo.query`), once
+`DASHBOARD_USER` and `DASHBOARD_PASSWORD` are set.
+
+Locally, against a libSQL server:
+
+    export DATABASE_ADAPTER=hrana BUNNY_DATABASE_URL=http://127.0.0.1:8080
+    mix compile --force   # the adapter is compiled in
+    mix phx.server
+
 ## Learn more
 
 * Official website: https://www.phoenixframework.org/

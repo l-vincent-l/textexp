@@ -41,6 +41,12 @@ RUN mix local.hex --force \
 # set build ENV
 ENV MIX_ENV="prod"
 
+# The database: "sqlite3" (a local file) or "hrana" (a libSQL server, e.g.
+# Bunny Database), see config/config.exs. Kept in the image, as the release
+# reads it again when it starts.
+ARG DATABASE_ADAPTER=sqlite3
+ENV DATABASE_ADAPTER=${DATABASE_ADAPTER}
+
 # install mix dependencies
 COPY mix.exs mix.lock ./
 RUN mix deps.get --only $MIX_ENV
@@ -98,6 +104,9 @@ RUN chown nobody /app
 # set runner ENV
 ENV MIX_ENV="prod"
 
+ARG DATABASE_ADAPTER=sqlite3
+ENV DATABASE_ADAPTER=${DATABASE_ADAPTER}
+
 # Only copy the final release from the build stage
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/textexp ./
 
@@ -111,7 +120,8 @@ COPY litestream.yml /etc/litestream.yml
 
 CMD ["/app/bin/fly_start"]
 
-# Default image: the SQLite file at DATABASE_PATH, without replication.
+# Default image: the SQLite file at DATABASE_PATH, without replication, or, with
+# DATABASE_ADAPTER=hrana, a libSQL server (Bunny Database).
 FROM runtime AS final
 
 USER nobody

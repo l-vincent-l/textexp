@@ -23,6 +23,16 @@ end
 config :textexp, TextexpWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# With DATABASE_ADAPTER=hrana (see config/config.exs), the database is a libSQL
+# server, e.g. Bunny Database, in every environment.
+if System.get_env("DATABASE_ADAPTER") == "hrana" do
+  config :textexp, Textexp.SqliteRepo,
+    uri:
+      System.get_env("BUNNY_DATABASE_URL") ||
+        raise("environment variable BUNNY_DATABASE_URL is missing"),
+    auth_token: System.get_env("BUNNY_DATABASE_AUTH_TOKEN")
+end
+
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
   config :textexp, TextexpWeb.Endpoint,
@@ -49,15 +59,18 @@ if config_env() == :prod do
 
   # A local SQLite file: on Fly.io, on a volume, replicated to S3 by Litestream
   # which runs next to the release (see litestream.yml and bin/fly_start).
-  database_path =
-    System.get_env("DATABASE_PATH") ||
-      raise """
-      environment variable DATABASE_PATH is missing.
-      For example: /data/textexp.db
-      """
+  if System.get_env("DATABASE_ADAPTER") != "hrana" do
+    database_path =
+      System.get_env("DATABASE_PATH") ||
+        raise """
+        environment variable DATABASE_PATH is missing.
+        For example: /data/textexp.db
+        """
+
+    config :textexp, Textexp.SqliteRepo, database: database_path
+  end
 
   config :textexp, Textexp.SqliteRepo,
-    database: database_path,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
