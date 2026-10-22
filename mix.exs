@@ -1,6 +1,12 @@
 defmodule Textexp.MixProject do
   use Mix.Project
 
+  # tantivy_ex comes from a fork whose NIF has functions the precompiled
+  # binaries of the release lack (Searcher.snippet/5): it is built from source,
+  # which needs Rust. Set here, before the dependencies compile, so that it
+  # applies everywhere (dev, test, Docker image).
+  System.put_env("TANTIVY_EX_BUILD", "1")
+
   def project do
     [
       app: :textexp,
@@ -41,7 +47,10 @@ defmodule Textexp.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:tantivy_ex, "~> 0.4.1"},
+      {:tantivy_ex, github: "l-vincent-l/tantivy_ex"},
+      # Builds tantivy_ex's NIF; overrides the requirements of tantivy_ex
+      # (0.36) and y_ex (0.37), both optional.
+      {:rustler, "~> 0.37", runtime: false, override: true},
       {:y_ex, "~> 0.13.0"},
       {:igniter, "~> 0.6", only: [:dev, :test]},
       {:bcrypt_elixir, "~> 3.0"},

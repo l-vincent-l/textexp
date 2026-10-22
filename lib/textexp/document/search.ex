@@ -15,6 +15,7 @@ defmodule Textexp.Document.Search do
   # The minimum tantivy accepts for one indexing thread; the default is 50 MB.
   @writer_memory_budget 15_000_000
   @limit 20
+  @snippet_length 200
 
   @doc """
   Builds the index of the documents `actor` can read.
@@ -33,7 +34,7 @@ defmodule Textexp.Document.Search do
   @doc """
   The documents matching `query`, best match first, with their `last_update`
   and, in their `:snippet` metadata, the fragment of their body around the
-  words of the query (see `Textexp.Document.Snippet.fragment/3`), `nil` when
+  words of the query (see `Textexp.Document.Snippet.segments/2`), `nil` when
   only the title matches. An invalid query (e.g. `cats AND (`) matches nothing.
   """
   def search(index, query, actor) do
@@ -42,17 +43,20 @@ defmodule Textexp.Document.Search do
         []
 
       query ->
-        hits = search_hits(index, query)
-        bodies = Map.new(hits)
-        terms = Snippet.terms(query)
+        case search_hits(index, query) do
+          {:ok, hits, snippet} ->
+            bodies = Map.new(hits)
 
-        hits
-        |> Enum.map(fn {id, _body} -> id end)
-        |> load_documents(actor)
-        |> Enum.map(fn document ->
-          snippet = Snippet.fragment(bodies[document.id], terms)
-          Ash.Resource.put_metadata(document, :snippet, snippet)
-        end)
+            hits
+            |> Enum.map(fn {id, _body} -> id end)
+            |> load_documents(actor)
+            |> Enum.map(fn document ->
+              Ash.Resource.put_metadata(document, :snippet, snippet.(bodies[document.id]))
+            end)
+
+          {:error, _reason} ->
+            []
+        end
     end
   end
 
@@ -81,15 +85,21 @@ defmodule Textexp.Document.Search do
   # `Searcher.search/3` with a string matches every document, and
   # `Searcher.search_with_parser/6` passes the schema where the index is
   # expected: the query is parsed here.
-  # The `{id, body}` of the matching documents, best match first.
+  # The `{id, body}` of the matching documents, best match first, and the
+  # function giving the snippet segments of a body for this query.
   defp search_hits(index, query) do
     with {:ok, parser} <- Query.parser(index, ["title", "body"]),
          {:ok, query} <- Query.parse(parser, query),
          {:ok, searcher} <- Searcher.new(index),
          {:ok, hits} <- Searcher.search(searcher, query, @limit) do
-      Enum.map(hits, &{&1["id"], &1["body"] || ""})
-    else
-      {:error, _reason} -> []
+      snippet = fn body ->
+        case Searcher.snippet(searcher, query, "body", body, max_num_chars: @snippet_length) do
+          {:ok, snippet} -> Snippet.segments(body, snippet)
+          {:error, _reason} -> nil
+        end
+      end
+
+      {:ok, Enum.map(hits, &{&1["id"], &1["body"] || ""}), snippet}
     end
   end
 

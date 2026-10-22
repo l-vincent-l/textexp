@@ -26,9 +26,9 @@ ARG RUNNER_IMAGE="docker.io/debian:${DEBIAN_VERSION}"
 
 FROM ${BUILDER_IMAGE} AS builder
 
-# install build dependencies
+# install build dependencies (Rust builds tantivy_ex's NIF, see mix.exs)
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends build-essential git nodejs npm \
+  && apt-get install -y --no-install-recommends build-essential git nodejs npm cargo \
   && rm -rf /var/lib/apt/lists/*
 
 # prepare build dir
