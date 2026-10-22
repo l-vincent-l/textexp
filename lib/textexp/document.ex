@@ -10,6 +10,7 @@ defmodule Textexp.Document do
   resources do
     resource Textexp.Document.Document do
       define :create_document, action: :create
+      define :import_document, action: :import, args: [:title, :snapshot]
       define :get_document, action: :read, get_by: [:id]
       define :list_documents, action: :read
       define :list_my_documents, action: :mine

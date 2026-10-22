@@ -44,22 +44,49 @@ defmodule TextexpWeb.DocumentListLive do
           </label>
         </.form>
 
-        <%!-- Shaped like a document card, highlighted. Outside the stream so that
+        <%!-- Shaped like document cards, highlighted. Outside the stream so that
              the empty state below keeps working. --%>
-        <button
-          id="new-document"
-          type="button"
-          phx-click="new_document"
-          class="group flex w-full items-center gap-4 rounded-box border border-primary/30 bg-primary/5 px-5 py-4 text-left transition duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/10 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary phx-click-loading:pointer-events-none phx-click-loading:opacity-60"
-        >
-          <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-content transition-transform duration-150 group-hover:scale-110">
-            <.icon name="hero-plus" class="size-5" />
-          </span>
-          <span class="flex flex-col">
-            <span class="text-base font-semibold text-primary">Nouveau document</span>
-            <span class="text-sm text-base-content/60">Commencer une page vierge</span>
-          </span>
-        </button>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <button
+            id="new-document"
+            type="button"
+            phx-click="new_document"
+            class="group flex w-full items-center gap-4 rounded-box border border-primary/30 bg-primary/5 px-5 py-4 text-left transition duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/10 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary phx-click-loading:pointer-events-none phx-click-loading:opacity-60"
+          >
+            <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-content transition-transform duration-150 group-hover:scale-110">
+              <.icon name="hero-plus" class="size-5" />
+            </span>
+            <span class="flex flex-col">
+              <span class="text-base font-semibold text-primary">Nouveau document</span>
+              <span class="text-sm text-base-content/60">Commencer une page vierge</span>
+            </span>
+          </button>
+
+          <%!-- Each file chosen is converted in the browser and sent to the
+               server (see the DocumentImport hook) --%>
+          <label
+            id="import-document"
+            data-import
+            class="group flex cursor-pointer items-center gap-4 rounded-box border border-base-300 bg-base-100 px-5 py-4 text-left transition duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary aria-busy:pointer-events-none aria-busy:opacity-60"
+          >
+            <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-base-200 text-base-content/70 transition-transform duration-150 group-hover:scale-110">
+              <.icon name="hero-arrow-up-tray" class="size-5 group-aria-busy:hidden" />
+              <span class="loading loading-spinner loading-sm hidden group-aria-busy:inline-block"></span>
+            </span>
+            <span class="flex flex-col">
+              <span class="text-base font-semibold">Importer</span>
+              <span class="text-sm text-base-content/60">Markdown, HTML ou texte</span>
+            </span>
+            <input
+              id="import-files"
+              type="file"
+              multiple
+              accept=".md,.markdown,.txt,.html,.htm,text/markdown,text/plain,text/html"
+              phx-hook="DocumentImport"
+              class="sr-only"
+            />
+          </label>
+        </div>
 
         <%!-- Sorted by last update, most recent first; by relevance when searching --%>
         <ul id="documents" class="mt-3 flex flex-col gap-3" phx-update="stream">
@@ -105,6 +132,35 @@ defmodule TextexpWeb.DocumentListLive do
   def handle_event("new_document", _params, socket) do
     document = Document.create_document!(%{}, actor: socket.assigns.current_user)
     {:noreply, push_navigate(socket, to: ~p"/documents/#{document.id}")}
+  end
+
+  # A file converted by the DocumentImport hook: its Yjs state, in base64.
+  def handle_event("import_document", %{"name" => name, "state" => state}, socket) do
+    title = name |> Path.rootname() |> String.trim()
+
+    with {:ok, snapshot} <- Base.decode64(state),
+         {:ok, document} <-
+           Document.import_document(title, snapshot,
+             load: [:last_update],
+             actor: socket.assigns.current_user
+           ) do
+      {:reply, %{id: document.id},
+       socket
+       |> stream_insert(:documents, document, at: 0)
+       |> put_flash(:info, "« #{title} » importé")}
+    else
+      _ -> {:reply, %{}, put_flash(socket, :error, "Impossible d'importer « #{name} »")}
+    end
+  end
+
+  def handle_event("import_failed", %{"name" => name, "reason" => reason}, socket) do
+    message =
+      case reason do
+        "too_large" -> "« #{name} » est trop volumineux (2 Mo au plus)"
+        _ -> "Impossible de lire « #{name} »"
+      end
+
+    {:reply, %{}, put_flash(socket, :error, message)}
   end
 
   # The search index is only built for the first search, in the background: it

@@ -198,4 +198,65 @@ defmodule TextexpWeb.DocumentListLiveTest do
       assert has_element?(view, "#documents-empty", "Aucun résultat")
     end
   end
+
+  describe "import" do
+    setup %{conn: conn} do
+      user = register_user()
+      %{conn: log_in(conn, user), user: user}
+    end
+
+    # The Yjs state the DocumentImport hook sends for a file holding `text`.
+    defp import_state(text) do
+      doc = Yex.Doc.new()
+
+      doc
+      |> Yex.Doc.get_xml_fragment("document-store")
+      |> Yex.XmlFragment.push(
+        Yex.XmlElementPrelim.new("blockGroup", [
+          Yex.XmlElementPrelim.new("blockContainer", [
+            Yex.XmlElementPrelim.new("paragraph", [Yex.XmlTextPrelim.from(text)])
+          ])
+        ])
+      )
+
+      doc |> Yex.encode_state_as_update!() |> Base.encode64()
+    end
+
+    test "offers a file input to the hook", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/documents")
+
+      assert has_element?(
+               view,
+               "#import-document input#import-files[type=file][phx-hook=DocumentImport]"
+             )
+    end
+
+    test "creates a document from a converted file", %{conn: conn, user: user} do
+      {:ok, view, _html} = live(conn, ~p"/documents")
+
+      render_hook(view, "import_document", %{
+        "name" => "Recette des crêpes.md",
+        "state" => import_state("Farine, œufs, lait")
+      })
+
+      assert_reply(view, %{id: id})
+      assert has_element?(view, "#documents-#{id}", "Recette des crêpes")
+      assert has_element?(view, "#documents-#{id}", "Farine, œufs, lait")
+
+      document = Document.get_document!(id, actor: user)
+      assert document.title == "Recette des crêpes"
+      assert Document.document_markdown!(document) == "Farine, œufs, lait"
+    end
+
+    test "reports a file it could not import", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/documents")
+
+      html = render_hook(view, "import_document", %{"name" => "x.md", "state" => "not base64!"})
+      assert_reply(view, %{})
+      assert html =~ "Impossible d&#39;importer « x.md »"
+
+      html = render_hook(view, "import_failed", %{"name" => "big.md", "reason" => "too_large"})
+      assert html =~ "trop volumineux"
+    end
+  end
 end

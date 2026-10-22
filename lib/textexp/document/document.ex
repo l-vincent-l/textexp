@@ -13,6 +13,9 @@ defmodule Textexp.Document.Document do
     data_layer: AshSqlite.DataLayer,
     authorizers: [Ash.Policy.Authorizer]
 
+  # Largest Yjs state an import accepts.
+  @max_import_bytes 5_000_000
+
   sqlite do
     table "documents"
     repo Textexp.SqliteRepo
@@ -24,6 +27,42 @@ defmodule Textexp.Document.Document do
     create :create do
       accept [:title]
       change relate_actor(:owner)
+    end
+
+    create :import do
+      description """
+      Creates a document from the full Yjs state of its content, e.g. a file
+      converted by BlockNote in the browser. The state is checked by applying
+      it, and its excerpt saved along.
+      """
+
+      accept [:title]
+      argument :snapshot, :binary, allow_nil?: false
+      change relate_actor(:owner)
+
+      change fn changeset, _context ->
+        snapshot = Ash.Changeset.get_argument(changeset, :snapshot)
+        doc = Yex.Doc.new()
+
+        cond do
+          not is_binary(snapshot) ->
+            changeset
+
+          byte_size(snapshot) > @max_import_bytes ->
+            Ash.Changeset.add_error(changeset,
+              field: :snapshot,
+              message: "contenu trop volumineux"
+            )
+
+          Yex.apply_update(doc, snapshot) == :ok ->
+            changeset
+            |> Ash.Changeset.force_change_attribute(:snapshot, snapshot)
+            |> Ash.Changeset.force_change_attribute(:excerpt, Textexp.Document.Body.excerpt(doc))
+
+          true ->
+            Ash.Changeset.add_error(changeset, field: :snapshot, message: "contenu illisible")
+        end
+      end
     end
 
     read :mine do
