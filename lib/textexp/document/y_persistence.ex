@@ -19,6 +19,11 @@ defmodule Textexp.Document.YPersistence do
 
   Updates applied on load use the `YPhoenix.Persistence.origin/0` origin,
   which the DocServer ignores.
+
+  Its operations bypass authorization: the DocServer is shared by all the
+  document's clients and saves on its own (timer, shutdown), so there is no
+  actor. Access is checked when joining the document's channel (see
+  `TextexpWeb.YDocRoomChannel`).
   """
   @behaviour YPhoenix.Persistence
 
@@ -29,6 +34,7 @@ defmodule Textexp.Document.YPersistence do
 
   @origin YPhoenix.Persistence.origin()
   @slow_ms 200
+  @system [authorize?: false]
 
   @doc """
   PubSub topic on which `{:document_updated, document_id, at, title}` is
@@ -45,7 +51,7 @@ defmodule Textexp.Document.YPersistence do
 
   @impl true
   def bind(state, document_id, doc) do
-    document = timed(:load, document_id, fn -> Document.get_document!(document_id) end)
+    document = timed(:load, document_id, fn -> Document.get_document!(document_id, @system) end)
 
     if document.snapshot do
       Yex.Doc.transaction(doc, @origin, fn -> Yex.apply_update(doc, document.snapshot) end)
@@ -56,10 +62,10 @@ defmodule Textexp.Document.YPersistence do
 
   @impl true
   def unbind(state, document_id, doc) do
-    document = Document.get_document!(document_id)
+    document = Document.get_document!(document_id, @system)
 
     if blank?(document.title) and Body.empty?(doc) do
-      timed(:delete, document_id, fn -> Document.destroy_document!(document) end)
+      timed(:delete, document_id, fn -> Document.destroy_document!(document, @system) end)
 
       Phoenix.PubSub.broadcast(
         Textexp.PubSub,
@@ -100,8 +106,8 @@ defmodule Textexp.Document.YPersistence do
     document =
       timed(:save, document_id, fn ->
         document_id
-        |> Document.get_document!()
-        |> Document.save_snapshot!(snapshot, %{excerpt: Body.excerpt(doc)})
+        |> Document.get_document!(@system)
+        |> Document.save_snapshot!(snapshot, %{excerpt: Body.excerpt(doc)}, @system)
       end)
 
     Phoenix.PubSub.broadcast(

@@ -7,7 +7,11 @@ defmodule Textexp.Document.Document do
   `excerpt` holds the first lines of its body, saved along with the snapshot to
   preview the document without decoding it.
   """
-  use Ash.Resource, otp_app: :textexp, domain: Textexp.Document, data_layer: AshSqlite.DataLayer
+  use Ash.Resource,
+    otp_app: :textexp,
+    domain: Textexp.Document,
+    data_layer: AshSqlite.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
 
   sqlite do
     table "documents"
@@ -53,6 +57,42 @@ defmodule Textexp.Document.Document do
         end
       end
     end
+
+    update :set_members do
+      description "Replaces the members of the document: a list of `%{id: user_id, role: role}`."
+      require_atomic? false
+      argument :members, {:array, :map}
+      # The owner, allowed to set the members (see the policies), looks up and
+      # relates users they could not read otherwise.
+      change manage_relationship(:members,
+               type: :append_and_remove,
+               join_keys: [:role],
+               authorize?: false
+             )
+    end
+  end
+
+  # The owner can do anything, editors can read and write, viewers can only
+  # read. YPersistence saves without actor, access being checked when joining
+  # the document's channel (see TextexpWeb.YDocRoomChannel).
+  policies do
+    policy action_type(:create) do
+      authorize_if actor_present()
+    end
+
+    policy action_type(:read) do
+      authorize_if relates_to_actor_via(:owner)
+      authorize_if expr(exists(memberships, user_id == ^actor(:id)))
+    end
+
+    policy action([:rename, :save_snapshot]) do
+      authorize_if relates_to_actor_via(:owner)
+      authorize_if expr(exists(memberships, user_id == ^actor(:id) and role == :editor))
+    end
+
+    policy action([:destroy, :set_members]) do
+      authorize_if relates_to_actor_via(:owner)
+    end
   end
 
   attributes do
@@ -74,6 +114,15 @@ defmodule Textexp.Document.Document do
   relationships do
     belongs_to :owner, Textexp.Accounts.User do
       public? true
+    end
+
+    has_many :memberships, Textexp.Document.Membership
+
+    many_to_many :members, Textexp.Accounts.User do
+      through Textexp.Document.Membership
+      join_relationship :memberships
+      source_attribute_on_join_resource :document_id
+      destination_attribute_on_join_resource :user_id
     end
   end
 

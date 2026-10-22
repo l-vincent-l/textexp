@@ -16,7 +16,10 @@ defmodule Textexp.Document do
       define :rename_document, action: :rename, args: [:title]
       define :save_snapshot, action: :save_snapshot, args: [:snapshot]
       define :destroy_document, action: :destroy
+      define :set_document_members, action: :set_members, args: [:members]
       define_calculation :document_markdown, calculation: :markdown, args: [:_record]
     end
+
+    resource Textexp.Document.Membership
   end
 end

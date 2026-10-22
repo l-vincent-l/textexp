@@ -2,10 +2,11 @@ defmodule Textexp.Document.Search do
   @moduledoc """
   Full-text search in the documents' titles and bodies.
 
-  The index is built in memory from the saved documents (`new_index/0`), and
-  kept by its user (a LiveView) for as long as it searches; it is freed along
-  with it. It does not follow later changes to the documents. It stores the
-  text of the bodies, to cut the snippets of the results from them.
+  The index is built in memory from the documents the user can read
+  (`new_index/1`), and kept by its user (a LiveView) for as long as it
+  searches; it is freed along with it. It does not follow later changes to the
+  documents. It stores the text of the bodies, to cut the snippets of the
+  results from them.
   """
   alias Textexp.Document
   alias Textexp.Document.Snippet
@@ -16,10 +17,10 @@ defmodule Textexp.Document.Search do
   @limit 20
 
   @doc """
-  Builds the index of all the documents.
+  Builds the index of the documents `actor` can read.
   """
-  def new_index do
-    documents = Document.list_documents!(load: [:text])
+  def new_index(actor) do
+    documents = Document.list_documents!(load: [:text], actor: actor)
 
     with {:ok, index} <- Index.create_in_ram(schema()),
          {:ok, writer} <- IndexWriter.new(index, @writer_memory_budget),
@@ -35,7 +36,7 @@ defmodule Textexp.Document.Search do
   words of the query (see `Textexp.Document.Snippet.fragment/3`), `nil` when
   only the title matches. An invalid query (e.g. `cats AND (`) matches nothing.
   """
-  def search(index, query) do
+  def search(index, query, actor) do
     case String.trim(query) do
       "" ->
         []
@@ -47,7 +48,7 @@ defmodule Textexp.Document.Search do
 
         hits
         |> Enum.map(fn {id, _body} -> id end)
-        |> load_documents()
+        |> load_documents(actor)
         |> Enum.map(fn document ->
           snippet = Snippet.fragment(bodies[document.id], terms)
           Ash.Resource.put_metadata(document, :snippet, snippet)
@@ -92,18 +93,19 @@ defmodule Textexp.Document.Search do
     end
   end
 
-  defp load_documents([]), do: []
+  defp load_documents([], _actor), do: []
 
-  defp load_documents(ids) do
+  defp load_documents(ids, actor) do
     documents =
       [
         query: [filter: [id: [in: ids]], select: [:title, :excerpt, :updated_at]],
-        load: [:last_update]
+        load: [:last_update],
+        actor: actor
       ]
       |> Document.list_documents!()
       |> Map.new(&{&1.id, &1})
 
-    # a document may have been deleted since it was indexed
+    # a document may have been deleted, or made unreadable, since it was indexed
     ids |> Enum.map(&documents[&1]) |> Enum.reject(&is_nil/1)
   end
 end

@@ -37,10 +37,10 @@ defmodule Textexp.Document.MarkdownTest do
     document =
       %{title: "Notes"}
       |> Document.create_document!(actor: user)
-      |> Document.save_snapshot!(snapshot("Hello"))
+      |> Document.save_snapshot!(snapshot("Hello"), authorize?: false)
 
     assert Document.document_markdown!(document) == "Hello"
-    assert [%{markdown: "Hello"}] = Document.list_documents!(load: [:markdown])
+    assert [%{markdown: "Hello"}] = Document.list_documents!(load: [:markdown], authorize?: false)
   end
 
   test "is empty without snapshot", %{user: user} do

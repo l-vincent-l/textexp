@@ -44,7 +44,7 @@ defmodule TextexpWeb.DocumentLiveTest do
 
       view |> element("#title-form") |> render_change(%{"title" => "Mon document"})
 
-      assert Document.get_document!(document.id).title == "Mon document"
+      assert Document.get_document!(document.id, authorize?: false).title == "Mon document"
       assert has_element?(view, "#documents-#{document.id}", "Mon document")
     end
 
@@ -95,6 +95,7 @@ defmodule TextexpWeb.DocumentLiveTest do
     test "lists the people viewing the document", %{conn: conn, user: user} do
       document = Document.create_document!(%{}, actor: user)
       other = register_user()
+      Document.set_document_members!(document, [%{id: other.id, role: :viewer}], actor: user)
 
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
       {:ok, other_view, _html} = live(log_in(build_conn(), other), ~p"/documents/#{document.id}")
@@ -171,6 +172,38 @@ defmodule TextexpWeb.DocumentLiveTest do
     test "an unknown document redirects to the list", %{conn: conn} do
       assert {:error, {:live_redirect, %{to: "/documents"}}} =
                live(conn, ~p"/documents/#{Ash.UUID.generate()}")
+    end
+
+    test "another user's document redirects to the list", %{conn: conn} do
+      document = Document.create_document!(%{title: "Notes"}, actor: register_user())
+
+      assert {:error, {:live_redirect, %{to: "/documents"}}} =
+               live(conn, ~p"/documents/#{document.id}")
+    end
+
+    test "an editor renames the document", %{conn: conn, user: user} do
+      owner = register_user()
+      document = Document.create_document!(%{title: "Notes"}, actor: owner)
+      Document.set_document_members!(document, [%{id: user.id, role: :editor}], actor: owner)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      assert has_element?(view, "#document-editor-#{document.id}[data-editable='true']")
+      view |> element("#title-form") |> render_change(%{"title" => "Mon document"})
+
+      assert Document.get_document!(document.id, authorize?: false).title == "Mon document"
+    end
+
+    test "a viewer reads the document without editing it", %{conn: conn, user: user} do
+      owner = register_user()
+      document = Document.create_document!(%{title: "Notes"}, actor: owner)
+      Document.set_document_members!(document, [%{id: user.id, role: :viewer}], actor: owner)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      assert has_element?(view, "#document-title[readonly]")
+      assert has_element?(view, "#document-editor-#{document.id}[data-editable='false']")
+
+      view |> element("#title-form") |> render_change(%{"title" => "Mon document"})
+      assert Document.get_document!(document.id, authorize?: false).title == "Notes"
     end
   end
 end

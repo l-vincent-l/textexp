@@ -40,7 +40,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
                view |> element("#new-document") |> render_click()
 
       {:ok, view, _html} = live(conn, path)
-      assert {:ok, _} = Document.get_document(id)
+      assert {:ok, _} = Document.get_document(id, authorize?: false)
       assert has_element?(view, "#document-editor-#{id}")
       assert has_element?(view, "#documents-#{id} a.menu-active")
     end
@@ -48,7 +48,11 @@ defmodule TextexpWeb.DocumentListLiveTest do
     test "the list has no sidebar and shows each document's title and excerpt",
          %{conn: conn, user: user} do
       document = Document.create_document!(%{title: "Notes"}, actor: user)
-      Document.save_snapshot!(document, nil, %{excerpt: "First line\nSecond line"})
+
+      Document.save_snapshot!(document, nil, %{excerpt: "First line\nSecond line"},
+        authorize?: false
+      )
+
       untitled = Document.create_document!(%{}, actor: user)
 
       {:ok, view, _html} = live(conn, ~p"/documents")
@@ -65,7 +69,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
       older = Document.create_document!(%{title: "Older"}, actor: user)
       newer = Document.create_document!(%{title: "Newer"}, actor: user)
       # editing the older one makes it the most recent
-      Document.save_snapshot!(older, nil, %{excerpt: "edited"})
+      Document.save_snapshot!(older, nil, %{excerpt: "edited"}, authorize?: false)
 
       {:ok, view, _html} = live(conn, ~p"/documents")
 
@@ -146,13 +150,41 @@ defmodule TextexpWeb.DocumentListLiveTest do
       document =
         %{title: "Notes"}
         |> Document.create_document!(actor: user)
-        |> Document.save_snapshot!(Yex.encode_state_as_update!(body), %{excerpt: "Le chat dort"})
+        |> Document.save_snapshot!(Yex.encode_state_as_update!(body), %{excerpt: "Le chat dort"},
+          authorize?: false
+        )
 
       {:ok, view, _html} = live(conn, ~p"/documents")
       view |> element("#search-form") |> render_change(%{"query" => "chat"})
       render_async(view)
 
       assert has_element?(view, "#documents-#{document.id} p mark", "chat")
+    end
+
+    test "lists the documents the user owns or is a member of", %{conn: conn, user: user} do
+      other = register_user()
+      own = Document.create_document!(%{title: "Mine"}, actor: user)
+      shared = Document.create_document!(%{title: "Shared"}, actor: other)
+      Document.set_document_members!(shared, [%{id: user.id, role: :viewer}], actor: other)
+      hidden = Document.create_document!(%{title: "Hidden"}, actor: other)
+
+      {:ok, view, _html} = live(conn, ~p"/documents")
+
+      assert has_element?(view, "#documents-#{own.id}")
+      assert has_element?(view, "#documents-#{shared.id}")
+      refute has_element?(view, "#documents-#{hidden.id}")
+    end
+
+    test "search ignores the documents the user cannot read", %{conn: conn, user: user} do
+      own = Document.create_document!(%{title: "Mes chats"}, actor: user)
+      hidden = Document.create_document!(%{title: "Leurs chats"}, actor: register_user())
+      {:ok, view, _html} = live(conn, ~p"/documents")
+
+      view |> element("#search-form") |> render_change(%{"query" => "chats"})
+      render_async(view)
+
+      assert has_element?(view, "#documents-#{own.id}")
+      refute has_element?(view, "#documents-#{hidden.id}")
     end
 
     test "a search without match shows that nothing was found", %{conn: conn, user: user} do

@@ -19,7 +19,10 @@ defmodule YPhoenix.Channel do
 
     * `:supervisor` - `DynamicSupervisor` under which DocServers are started;
     * `:registry_scope` - `:syn` scope in which DocServers are registered by
-      document name, so there is only one per document in the cluster.
+      document name, so there is only one per document in the cluster;
+    * `:read_only` - when `true`, the client receives the document and its
+      updates, and shares its awareness (cursor, presence), but the updates it
+      sends are dropped (default `false`).
   """
 
   require Logger
@@ -30,6 +33,7 @@ defmodule YPhoenix.Channel do
   alias YPhoenix.DocServer
 
   def join(socket, topic, doc_name, opts) do
+    {read_only?, opts} = Keyword.pop(opts, :read_only, false)
     uid = "#{node()}_#{System.unique_integer()}"
 
     Keyword.fetch!(opts, :presence).track_user(topic, uid, %{})
@@ -37,7 +41,14 @@ defmodule YPhoenix.Channel do
     case start_doc_server(topic, doc_name, opts) do
       {:ok, docpid} ->
         Process.monitor(docpid)
-        {:ok, assign(socket, doc_name: doc_name, doc_pid: docpid, doc_server_opts: opts)}
+
+        {:ok,
+         assign(socket,
+           doc_name: doc_name,
+           doc_pid: docpid,
+           doc_server_opts: opts,
+           read_only?: read_only?
+         )}
 
       {:error, reason} ->
         {:error, reason}
@@ -47,11 +58,25 @@ defmodule YPhoenix.Channel do
   def handle_in(event, {:binary, chunk}, socket) when event in ["yjs_sync", "yjs"] do
     server = socket.assigns.doc_pid
 
-    DocServer.process_message_v1(server, chunk, self())
-    |> handle_process_message_result(server)
+    if socket.assigns.read_only? and not read_only_message?(chunk) do
+      Logger.debug("Update of read-only client dropped for #{socket.assigns.doc_name}")
+    else
+      DocServer.process_message_v1(server, chunk, self())
+      |> handle_process_message_result(server)
+    end
 
     {:noreply, socket}
   end
+
+  # Whether the message leaves the document unchanged, judged on its first
+  # bytes as Yex.DocServer itself dispatches them: the client's state vector
+  # (step 1 of the sync), its awareness, or a query of the awareness. Anything
+  # else, the client's state (step 2), an edit or an unknown message, is
+  # refused.
+  defp read_only_message?(<<0, 0, _::binary>>), do: true
+  defp read_only_message?(<<1, _::binary>>), do: true
+  defp read_only_message?(<<3>>), do: true
+  defp read_only_message?(_chunk), do: false
 
   defp handle_process_message_result(result, server) do
     case result do

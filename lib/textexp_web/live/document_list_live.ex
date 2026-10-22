@@ -94,7 +94,7 @@ defmodule TextexpWeb.DocumentListLive do
        searching?: false,
        index: nil
      )
-     |> stream(:documents, list_documents())}
+     |> stream(:documents, list_documents(socket.assigns.current_user))}
   end
 
   # An empty document was left and deleted (see YPersistence).
@@ -115,9 +115,11 @@ defmodule TextexpWeb.DocumentListLive do
     socket =
       case socket.assigns.index do
         nil when query != "" ->
+          user = socket.assigns.current_user
+
           socket
           |> assign(index: AsyncResult.loading())
-          |> start_async(:index, &Search.new_index/0)
+          |> start_async(:index, fn -> Search.new_index(user) end)
 
         _ ->
           show_results(socket)
@@ -151,22 +153,25 @@ defmodule TextexpWeb.DocumentListLive do
       {"", _index} ->
         socket
         |> assign(searching?: false)
-        |> stream(:documents, list_documents(), reset: true)
+        |> stream(:documents, list_documents(socket.assigns.current_user), reset: true)
 
       {query, %AsyncResult{ok?: true, result: index}} ->
         socket
         |> assign(searching?: true)
-        |> stream(:documents, Search.search(index, query), reset: true)
+        |> stream(:documents, Search.search(index, query, socket.assigns.current_user),
+          reset: true
+        )
 
       _loading_or_failed ->
         socket
     end
   end
 
-  defp list_documents do
+  defp list_documents(user) do
     Document.list_documents!(
       query: [select: [:title, :excerpt, :updated_at], sort: [last_update: :desc]],
-      load: [:last_update]
+      load: [:last_update],
+      actor: user
     )
   end
 end

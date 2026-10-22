@@ -52,6 +52,7 @@ type EditorProps = {
   provider: PhoenixChannelProvider;
   fragment: Y.XmlFragment;
   userName: string;
+  editable: boolean;
   threadStore: ThreadStore;
   resolveUsers: ResolveUsers;
 };
@@ -60,6 +61,7 @@ function Editor({
   provider,
   fragment,
   userName,
+  editable,
   threadStore,
   resolveUsers,
 }: EditorProps) {
@@ -75,12 +77,13 @@ function Editor({
     }),
   );
 
-  return <BlockNoteView editor={editor} theme="light" />;
+  return <BlockNoteView editor={editor} editable={editable} theme="light" />;
 }
 
 /**
  * Mounts the editor of the document described by `el` (`data-document-id`,
- * `data-user-id`, `data-user-name`), which holds the loading skeleton and the
+ * `data-user-id`, `data-user-name`, and `data-editable`, `"false"` for a
+ * read-only editor), which holds the loading skeleton and the
  * hidden editor node. `resolveUsers` gives the users of the given ids. Returns
  * the function that tears it all down.
  */
@@ -134,6 +137,7 @@ export function mountEditor(
       provider={provider}
       fragment={fragment}
       userName={el.dataset.userName ?? ""}
+      editable={el.dataset.editable !== "false"}
       threadStore={threadStore}
       resolveUsers={resolveUsers}
     />,

@@ -60,7 +60,7 @@ defmodule Textexp.Document.YPersistenceTest do
   end
 
   test "loading applies the saved snapshot", %{document: document} do
-    Document.save_snapshot!(document, text_update("hello"))
+    Document.save_snapshot!(document, text_update("hello"), authorize?: false)
 
     assert loaded_text(document.id) == "hello"
   end
@@ -70,7 +70,7 @@ defmodule Textexp.Document.YPersistenceTest do
     state = YPersistence.bind(%{}, document.id, doc)
     state = edit(state, document, doc, "hello")
 
-    refute Document.get_document!(document.id).snapshot
+    refute Document.get_document!(document.id, authorize?: false).snapshot
 
     YPersistence.flush(state, document.id, doc)
 
@@ -86,7 +86,7 @@ defmodule Textexp.Document.YPersistenceTest do
 
     YPersistence.flush(state, document.id, doc)
 
-    assert Document.get_document!(document.id).excerpt == "Title\nBody"
+    assert Document.get_document!(document.id, authorize?: false).excerpt == "Title\nBody"
   end
 
   test "flush does nothing when nothing changed", %{document: document} do
@@ -94,7 +94,9 @@ defmodule Textexp.Document.YPersistenceTest do
     state = YPersistence.bind(%{}, document.id, doc)
 
     assert YPersistence.flush(state, document.id, doc) == state
-    assert Document.get_document!(document.id).updated_at == document.updated_at
+
+    assert Document.get_document!(document.id, authorize?: false).updated_at ==
+             document.updated_at
   end
 
   test "flush only writes once per batch of edits", %{document: document} do
@@ -103,10 +105,10 @@ defmodule Textexp.Document.YPersistenceTest do
     state = edit(state, document, doc, "hello")
 
     state = YPersistence.flush(state, document.id, doc)
-    saved = Document.get_document!(document.id)
+    saved = Document.get_document!(document.id, authorize?: false)
 
     assert YPersistence.flush(state, document.id, doc) == state
-    assert Document.get_document!(document.id).updated_at == saved.updated_at
+    assert Document.get_document!(document.id, authorize?: false).updated_at == saved.updated_at
   end
 
   test "unbind saves pending edits", %{document: document} do
@@ -137,7 +139,7 @@ defmodule Textexp.Document.YPersistenceTest do
       YPersistence.update_v1(state, update, document_id, doc)
 
       title = "Notes du #{Calendar.strftime(Date.utc_today(), "%d-%m-%Y")}"
-      assert Document.get_document!(document_id).title == title
+      assert Document.get_document!(document_id, authorize?: false).title == title
       assert_receive {:document_updated, ^document_id, _at, ^title}
     end
 
@@ -150,7 +152,7 @@ defmodule Textexp.Document.YPersistenceTest do
       state = YPersistence.update_v1(state, update, document.id, doc)
       YPersistence.flush(state, document.id, doc)
 
-      assert Document.get_document!(document.id).title == nil
+      assert Document.get_document!(document.id, authorize?: false).title == nil
     end
   end
 
@@ -164,7 +166,7 @@ defmodule Textexp.Document.YPersistenceTest do
     state = edit(state, document, doc, "hello")
     YPersistence.flush(state, document.id, doc)
 
-    updated_at = Document.get_document!(document.id).updated_at
+    updated_at = Document.get_document!(document.id, authorize?: false).updated_at
     assert_receive {:document_updated, ^document_id, ^updated_at, "Notes"}
   end
 
@@ -174,7 +176,7 @@ defmodule Textexp.Document.YPersistenceTest do
     state = edit(state, document, doc, "hello")
     YPersistence.flush(state, document.id, doc)
 
-    saved = Document.get_document!(document.id, load: [:last_update])
+    saved = Document.get_document!(document.id, load: [:last_update], authorize?: false)
     assert saved.last_update == saved.updated_at
     assert DateTime.compare(saved.last_update, document.updated_at) == :gt
   end
@@ -227,20 +229,20 @@ defmodule Textexp.Document.YPersistenceTest do
       state = YPersistence.bind(%{}, document.id, doc)
       YPersistence.unbind(state, document.id, doc)
 
-      assert {:error, _} = Document.get_document(document.id)
+      assert {:error, _} = Document.get_document(document.id, authorize?: false)
       assert_receive {:document_deleted, ^document_id}
     end
 
     test "deletes a document whose body only has empty paragraphs", %{document: document} do
       unbind_with_body(document, [{"paragraph", ""}, {"paragraph", "  "}])
 
-      assert {:error, _} = Document.get_document(document.id)
+      assert {:error, _} = Document.get_document(document.id, authorize?: false)
     end
 
     test "keeps an untitled document with text", %{document: document} do
       unbind_with_body(document, [{"paragraph", ""}, {"paragraph", "hello"}])
 
-      assert {:ok, %{snapshot: snapshot}} = Document.get_document(document.id)
+      assert {:ok, %{snapshot: snapshot}} = Document.get_document(document.id, authorize?: false)
       assert snapshot
     end
 
@@ -248,15 +250,15 @@ defmodule Textexp.Document.YPersistenceTest do
          %{document: document} do
       unbind_with_body(document, [{"image", ""}])
 
-      assert {:ok, _} = Document.get_document(document.id)
+      assert {:ok, _} = Document.get_document(document.id, authorize?: false)
     end
 
     test "keeps a titled document without body", %{document: document} do
-      document = Document.rename_document!(document, "Notes")
+      document = Document.rename_document!(document, "Notes", authorize?: false)
 
       unbind_with_body(document, [])
 
-      assert {:ok, _} = Document.get_document(document.id)
+      assert {:ok, _} = Document.get_document(document.id, authorize?: false)
     end
   end
 
@@ -285,8 +287,8 @@ defmodule Textexp.Document.YPersistenceTest do
     end
 
     test "starting does not write anything", %{document: document} do
-      Document.save_snapshot!(document, text_update("hello"))
-      saved = Document.get_document!(document.id)
+      Document.save_snapshot!(document, text_update("hello"), authorize?: false)
+      saved = Document.get_document!(document.id, authorize?: false)
 
       pid = start_doc_server(document)
       # the load-time update message is handled before this call returns
@@ -294,14 +296,14 @@ defmodule Textexp.Document.YPersistenceTest do
       send(pid, :flush)
       _ = :sys.get_state(pid)
 
-      assert Document.get_document!(document.id).updated_at == saved.updated_at
+      assert Document.get_document!(document.id, authorize?: false).updated_at == saved.updated_at
     end
 
     test "edits are saved by the periodic flush", %{document: document} do
       pid = start_doc_server(document)
       send_edit(pid, "hello")
 
-      refute Document.get_document!(document.id).snapshot
+      refute Document.get_document!(document.id, authorize?: false).snapshot
 
       # message normally sent by the DocServer's timer
       send(pid, :flush)

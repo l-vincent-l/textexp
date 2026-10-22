@@ -44,6 +44,7 @@ defmodule TextexpWeb.DocumentLive do
                   placeholder="Sans titre"
                   phx-debounce="300"
                   autocomplete="off"
+                  readonly={!@can_edit?}
                   class="w-full bg-transparent text-4xl font-bold leading-tight outline-none placeholder:text-[#cfcfcf]"
                 />
               </.form>
@@ -85,6 +86,7 @@ defmodule TextexpWeb.DocumentLive do
               data-document-id={@document.id}
               data-user-id={@current_user.id}
               data-user-name={@current_user.email}
+              data-editable={to_string(@can_edit?)}
             >
               <div
                 data-skeleton
@@ -141,11 +143,14 @@ defmodule TextexpWeb.DocumentLive do
     end
 
     documents =
-      Document.list_documents!(query: [select: [:title], sort: [last_update: :desc]])
+      Document.list_documents!(
+        query: [select: [:title], sort: [last_update: :desc]],
+        actor: socket.assigns.current_user
+      )
 
     {:ok,
      socket
-     |> assign(document: nil)
+     |> assign(document: nil, can_edit?: false)
      |> stream(:viewers, [])
      |> stream(:documents, documents)}
   end
@@ -156,7 +161,7 @@ defmodule TextexpWeb.DocumentLive do
     do: {:noreply, socket}
 
   def handle_params(%{"id" => id}, _uri, socket) do
-    case Document.get_document(id, load: [:last_update]) do
+    case Document.get_document(id, load: [:last_update], actor: socket.assigns.current_user) do
       {:ok, document} ->
         previous = socket.assigns.document
 
@@ -188,6 +193,8 @@ defmodule TextexpWeb.DocumentLive do
     socket
     |> assign(
       document: document,
+      # Viewers read the document without editing it (see YDocRoomChannel).
+      can_edit?: Ash.can?({document, :save_snapshot}, socket.assigns.current_user),
       page_title: document.title || "Sans titre",
       last_update: document.last_update,
       title_form: to_form(%{"title" => document.title})
@@ -288,8 +295,15 @@ defmodule TextexpWeb.DocumentLive do
   end
 
   def handle_event("update_title", %{"title" => title}, socket) do
-    document = Document.rename_document!(socket.assigns.document, title)
-    {:noreply, put_title(socket, document)}
+    case Document.rename_document(socket.assigns.document, title,
+           actor: socket.assigns.current_user
+         ) do
+      {:ok, document} ->
+        {:noreply, put_title(socket, document)}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Vous ne pouvez pas renommer ce document")}
+    end
   end
 
   defp put_title(socket, document) do

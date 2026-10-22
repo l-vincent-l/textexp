@@ -21,8 +21,8 @@ defmodule Textexp.Document.SnapshotTest do
   end
 
   test "snapshots keep UTF-8 binaries containing NUL bytes intact", %{document: document} do
-    Document.save_snapshot!(document, @utf8_with_nul)
+    Document.save_snapshot!(document, @utf8_with_nul, authorize?: false)
 
-    assert Document.get_document!(document.id).snapshot == @utf8_with_nul
+    assert Document.get_document!(document.id, authorize?: false).snapshot == @utf8_with_nul
   end
 end
