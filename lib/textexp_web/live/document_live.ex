@@ -52,25 +52,50 @@ defmodule TextexpWeb.DocumentLive do
                 <p id="last-update" class="text-sm text-[#9b9b9b]">
                   Dernière mise à jour : {Calendar.strftime(@last_update, "%d/%m/%Y %H:%M:%S")} UTC
                 </p>
-                <%!-- People who have this document open --%>
-                <ul id="viewers" class="flex -space-x-2" phx-update="stream">
-                  <li
-                    :for={{id, viewer} <- @streams.viewers}
-                    id={id}
-                    title={viewer.email}
+                <div class="flex items-center gap-3">
+                  <%!-- People who have this document open --%>
+                  <ul id="viewers" class="flex -space-x-2" phx-update="stream">
+                    <li
+                      :for={{id, viewer} <- @streams.viewers}
+                      id={id}
+                      title={viewer.email}
+                      class={[
+                        "flex size-8 items-center justify-center rounded-full text-xs font-semibold uppercase",
+                        "ring-2 ring-white transition-transform duration-150 hover:z-10 hover:-translate-y-0.5",
+                        if(viewer.id == @current_user.id,
+                          do: "bg-[#3f3f3f] text-white",
+                          else: "bg-[#ececec] text-[#3f3f3f]"
+                        )
+                      ]}
+                    >
+                      {String.first(to_string(viewer.email))}
+                    </li>
+                  </ul>
+                  <button
+                    :if={@can_share?}
+                    id="share-button"
+                    type="button"
+                    phx-click="toggle_share"
+                    aria-expanded={to_string(@sharing?)}
+                    aria-controls="share-panel"
                     class={[
-                      "flex size-8 items-center justify-center rounded-full text-xs font-semibold uppercase",
-                      "ring-2 ring-white transition-transform duration-150 hover:z-10 hover:-translate-y-0.5",
-                      if(viewer.id == @current_user.id,
-                        do: "bg-[#3f3f3f] text-white",
-                        else: "bg-[#ececec] text-[#3f3f3f]"
+                      "btn btn-sm rounded-full border-[#e3e3e3] px-4 font-medium shadow-none",
+                      "transition-colors duration-150",
+                      if(@sharing?,
+                        do: "bg-[#3f3f3f] text-white hover:bg-[#2b2b2b]",
+                        else: "bg-white text-[#3f3f3f] hover:bg-[#f4f4f4]"
                       )
                     ]}
                   >
-                    {String.first(to_string(viewer.email))}
-                  </li>
-                </ul>
+                    <.icon name="hero-user-plus" class="size-4" /> Partager
+                  </button>
+                </div>
               </div>
+              <.share_panel
+                :if={@sharing?}
+                form={@share_form}
+                members={@streams.members}
+              />
               <div class="divider"></div>
             </div>
             <%!-- Managed by the DocumentEditor hook: LiveView must not touch it. Its
@@ -137,6 +162,92 @@ defmodule TextexpWeb.DocumentLive do
     """
   end
 
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :members, :any, required: true
+
+  # Invites an address as viewer or editor, and lists the members.
+  defp share_panel(assigns) do
+    ~H"""
+    <section
+      id="share-panel"
+      class="mt-4 rounded-2xl border border-[#ececec] bg-[#fafafa] p-4 sm:p-5"
+    >
+      <h2 class="text-sm font-semibold text-[#3f3f3f]">Partager ce document</h2>
+      <p class="mt-0.5 text-xs text-[#9b9b9b]">
+        La personne doit déjà avoir un compte.
+      </p>
+      <.form
+        for={@form}
+        id="share-form"
+        phx-submit="share"
+        class="mt-3 flex flex-wrap items-start gap-2"
+      >
+        <div class="min-w-56 flex-1">
+          <.input
+            field={@form[:email]}
+            type="email"
+            placeholder="adresse@exemple.fr"
+            autocomplete="off"
+            required
+          />
+        </div>
+        <.input
+          field={@form[:role]}
+          type="select"
+          options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
+          class="select w-32"
+        />
+        <button
+          id="share-submit"
+          class="btn btn-neutral transition-transform duration-150 active:scale-95"
+          phx-disable-with="Invitation…"
+        >
+          Inviter
+        </button>
+      </.form>
+      <ul id="members" phx-update="stream" class="mt-2 divide-y divide-[#ececec]">
+        <li id="members-empty" class="hidden py-2 text-sm text-[#9b9b9b] only:block">
+          Pas encore partagé.
+        </li>
+        <li
+          :for={{id, member} <- @members}
+          id={id}
+          class="group flex items-center justify-between gap-3 py-2 text-sm"
+        >
+          <span class="flex min-w-0 items-center gap-2">
+            <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#ececec] text-xs font-semibold uppercase">
+              {String.first(member.email)}
+            </span>
+            <span class="truncate">{member.email}</span>
+          </span>
+          <span class="flex shrink-0 items-center gap-1">
+            <span class={[
+              "rounded-full px-2 py-0.5 text-xs font-medium",
+              if(member.role == :editor,
+                do: "bg-[#e8f0fe] text-[#1a56db]",
+                else: "bg-[#ececec] text-[#6b6b6b]"
+              )
+            ]}>
+              {if member.role == :editor, do: "Éditeur", else: "Lecteur"}
+            </span>
+            <button
+              id={"remove-#{member.id}"}
+              type="button"
+              phx-click="remove_member"
+              phx-value-id={member.id}
+              data-confirm={"Retirer l'accès de #{member.email} ?"}
+              aria-label={"Retirer #{member.email}"}
+              class="btn btn-ghost btn-xs btn-square opacity-60 transition-opacity hover:opacity-100"
+            >
+              <.icon name="hero-x-mark" class="size-4" />
+            </button>
+          </span>
+        </li>
+      </ul>
+    </section>
+    """
+  end
+
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.documents_topic())
@@ -150,8 +261,15 @@ defmodule TextexpWeb.DocumentLive do
 
     {:ok,
      socket
-     |> assign(document: nil, can_edit?: false)
+     |> assign(
+       document: nil,
+       can_edit?: false,
+       can_share?: false,
+       sharing?: false,
+       share_form: nil
+     )
      |> stream(:viewers, [])
+     |> stream(:members, [])
      |> stream(:documents, documents)}
   end
 
@@ -195,6 +313,9 @@ defmodule TextexpWeb.DocumentLive do
       document: document,
       # Viewers read the document without editing it (see YDocRoomChannel).
       can_edit?: Ash.can?({document, :save_snapshot}, socket.assigns.current_user),
+      # Only the owner shares the document (see Membership).
+      can_share?: Ash.can?({document, :set_members}, socket.assigns.current_user),
+      sharing?: false,
       page_title: document.title || "Sans titre",
       last_update: document.last_update,
       title_form: to_form(%{"title" => document.title})
@@ -294,6 +415,43 @@ defmodule TextexpWeb.DocumentLive do
     {:reply, %{users: users}, socket}
   end
 
+  def handle_event("toggle_share", _params, %{assigns: %{sharing?: true}} = socket),
+    do: {:noreply, assign(socket, sharing?: false)}
+
+  def handle_event("toggle_share", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(sharing?: true, share_form: share_form(socket))
+     |> stream(:members, members(socket), reset: true)}
+  end
+
+  def handle_event("share", %{"share" => params}, socket) do
+    case AshPhoenix.Form.submit(socket.assigns.share_form, params: params) do
+      {:ok, membership} ->
+        [member] = members(socket, [membership])
+
+        {:noreply,
+         socket
+         |> assign(share_form: share_form(socket))
+         |> stream_insert(:members, member)
+         |> put_flash(:info, "Document partagé avec #{member.email}")}
+
+      {:error, form} ->
+        {:noreply, assign(socket, share_form: to_form(form))}
+    end
+  end
+
+  def handle_event("remove_member", %{"id" => id}, socket) do
+    user = socket.assigns.current_user
+
+    with {:ok, membership} <- Ash.get(Document.Membership, id, actor: user),
+         :ok <- Document.remove_document_member(membership, actor: user) do
+      {:noreply, stream_delete_by_dom_id(socket, :members, "members-#{id}")}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Impossible de retirer ce membre")}
+    end
+  end
+
   def handle_event("update_title", %{"title" => title}, socket) do
     case Document.rename_document(socket.assigns.document, title,
            actor: socket.assigns.current_user
@@ -314,5 +472,39 @@ defmodule TextexpWeb.DocumentLive do
       title_form: to_form(%{"title" => document.title})
     )
     |> stream_insert(:documents, document)
+  end
+
+  # The form inviting an address to the open document.
+  defp share_form(socket) do
+    document_id = socket.assigns.document.id
+
+    Document.Membership
+    |> AshPhoenix.Form.for_create(:share,
+      as: "share",
+      actor: socket.assigns.current_user,
+      params: %{"role" => "viewer"},
+      transform_params: fn _form, params, _action ->
+        Map.put(params, "document_id", document_id)
+      end
+    )
+    |> to_form()
+  end
+
+  # The members of the open document (or `memberships` of it), with their email.
+  defp members(socket, memberships \\ nil) do
+    user = socket.assigns.current_user
+
+    memberships =
+      memberships || Document.list_document_members!(socket.assigns.document.id, actor: user)
+
+    emails =
+      memberships
+      |> Enum.map(& &1.user_id)
+      |> Accounts.list_users_by_ids!(actor: user)
+      |> Map.new(&{&1.id, to_string(&1.email)})
+
+    memberships
+    |> Enum.map(&%{id: &1.id, email: emails[&1.user_id], role: &1.role})
+    |> Enum.sort_by(& &1.email)
   end
 end

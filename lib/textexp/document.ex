@@ -20,6 +20,10 @@ defmodule Textexp.Document do
       define_calculation :document_markdown, calculation: :markdown, args: [:_record]
     end
 
-    resource Textexp.Document.Membership
+    resource Textexp.Document.Membership do
+      define :share_document, action: :share, args: [:document_id, :email, :role]
+      define :list_document_members, action: :for_document, args: [:document_id]
+      define :remove_document_member, action: :destroy
+    end
   end
 end

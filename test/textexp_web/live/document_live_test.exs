@@ -206,4 +206,66 @@ defmodule TextexpWeb.DocumentLiveTest do
       assert Document.get_document!(document.id, authorize?: false).title == "Notes"
     end
   end
+
+  describe "sharing" do
+    setup %{conn: conn} do
+      owner = register_user()
+      document = Document.create_document!(%{title: "Notes"}, actor: owner)
+      %{conn: log_in(conn, owner), owner: owner, document: document}
+    end
+
+    test "the owner invites an address as editor", %{conn: conn, document: document} do
+      editor = register_user()
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      refute has_element?(view, "#share-panel")
+      view |> element("#share-button") |> render_click()
+      assert has_element?(view, "#members-empty")
+
+      view
+      |> form("#share-form", share: %{email: editor.email, role: "editor"})
+      |> render_submit()
+
+      assert has_element?(view, "#members li", to_string(editor.email))
+      assert has_element?(view, "#members li", "Éditeur")
+
+      assert {:ok, document} = Document.get_document(document.id, actor: editor)
+      assert Ash.can?({document, :rename}, editor)
+    end
+
+    test "an address without account is refused", %{conn: conn, document: document} do
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+      view |> element("#share-button") |> render_click()
+
+      html =
+        view
+        |> form("#share-form", share: %{email: "nobody@example.com", role: "viewer"})
+        |> render_submit()
+
+      assert html =~ "aucun compte avec cette adresse"
+      assert has_element?(view, "#members-empty")
+    end
+
+    test "the owner removes a member", %{conn: conn, owner: owner, document: document} do
+      viewer = register_user()
+      membership = Document.share_document!(document.id, viewer.email, :viewer, actor: owner)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      view |> element("#share-button") |> render_click()
+      assert has_element?(view, "#members-#{membership.id}", "Lecteur")
+
+      view |> element("#remove-#{membership.id}") |> render_click()
+
+      refute has_element?(view, "#members-#{membership.id}")
+      assert {:error, _} = Document.get_document(document.id, actor: viewer)
+    end
+
+    test "members do not see the share button", %{owner: owner, document: document} do
+      editor = register_user()
+      Document.share_document!(document.id, editor.email, :editor, actor: owner)
+      {:ok, view, _html} = live(log_in(build_conn(), editor), ~p"/documents/#{document.id}")
+
+      refute has_element?(view, "#share-button")
+    end
+  end
 end
