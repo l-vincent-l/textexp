@@ -1,0 +1,31 @@
+## Customize flags given to the VM: https://www.erlang.org/doc/man/erl.html
+## -mode/-name/-sname/-setcookie are configured via env vars, do not set them here
+
+## Kept small and quiet when idle: the app has few users, and is billed by the
+## CPU time and memory it uses (Bunny). By default the VM starts one scheduler
+## per core it sees, which on a shared host is the host's cores: each costs
+## memory, and wakes up.
+
+## One scheduler, and one dirty CPU scheduler (tantivy's NIFs, Yjs merges)
++S 1:1
++SDcpu 1:1
+## Dirty IO schedulers, for SQLite's NIF (default 10)
++SDio 4
+
+## No busy waiting: by default, a scheduler with nothing to do spins for a
+## while before sleeping, to react faster to new work
++sbwt none
++sbwtdcpu none
++sbwtdio none
+
+## At most 65536 ports (sockets, files), instead of one per file descriptor
+## the host allows: the VM sizes its tables after it, and with Docker's default
+## limit (2^31 locally) they took 2 GB of memory
++Q 65536
+
+## Tweak GC to run more often
+##-env ERL_FULLSWEEP_AFTER 10
+
+## Enable deployment without epmd
+## (requires changing both vm.args and remote.vm.args)
+##-start_epmd false -erl_epmd_port 6789
