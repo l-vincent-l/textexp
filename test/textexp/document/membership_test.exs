@@ -1,5 +1,5 @@
 defmodule Textexp.Document.MembershipTest do
-  use Textexp.DataCase, async: true
+  use Textexp.DataCase
 
   alias Textexp.Document
 
