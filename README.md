@@ -19,14 +19,13 @@ Two deployments run the same code, to compare them. Both are started by hand.
 | Database | SQLite file on a volume | Bunny Database, through `ecto_hrana` |
 | Backup | Litestream, to Tigris | Bunny's |
 | Image | `fly` target, built by Fly | `final` target with `DATABASE_ADAPTER=hrana`, on ghcr.io |
-| Deploy | `fly deploy` | Actions > Deploy to Bunny > Run workflow |
+| Deploy | `fly deploy` | Actions > Bunny image > Run workflow, then deploy the image on Bunny |
 | URL | https://textexp.fly.dev | https://mc-3gejc6ktt2.bunny.run |
 
 The database is chosen at compile time by `DATABASE_ADAPTER` (`sqlite3`, the
 default, or `hrana`), see `config/config.exs`. On Bunny, the container reads
-`BUNNY_DATABASE_URL` and `BUNNY_DATABASE_AUTH_TOKEN`; the workflow
-(`.github/workflows/deploy-bunny.yml`) needs a `BUNNY_API_KEY` repository
-secret.
+`BUNNY_DATABASE_URL` and `BUNNY_DATABASE_AUTH_TOKEN`; its image is built and
+pushed to ghcr.io by `.github/workflows/bunny-image.yml`.
 
 To compare them, each `/admin/dashboard` shows the query times measured by
 the server (page Metrics, `textexp.sqlite_repo.query`), once `DASHBOARD_USER`

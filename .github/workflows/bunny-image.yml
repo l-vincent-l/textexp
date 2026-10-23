@@ -1,28 +1,24 @@
-name: Deploy to Bunny
+name: Bunny image
 
-# Deploys to Bunny: builds the image with the database on Bunny Database
-# (DATABASE_ADAPTER=hrana), pushes it to ghcr.io, then points the Magic
-# Container at it, which redeploys it.
+# Builds the image for Bunny, with the database on Bunny Database
+# (DATABASE_ADAPTER=hrana), and pushes it to ghcr.io, tagged with the commit
+# and `latest`. Deploying it to the Magic Container is done by hand, on Bunny.
 #
-# Run by hand: Actions > Deploy to Bunny > Run workflow, or
-# `gh workflow run deploy-bunny.yml`. Needs the BUNNY_API_KEY repository
-# secret (an API key of the Bunny account).
+# Run by hand: Actions > Bunny image > Run workflow, or
+# `gh workflow run bunny-image.yml`.
 on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-bunny
+  group: bunny-image
   cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  # The Magic Containers application and its container.
-  BUNNY_APP_ID: quo8xPZI3p0XxX1
-  BUNNY_CONTAINER: textexp
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,7 +39,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -55,13 +50,3 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Point the Magic Container at the new image
-        # BunnyWay/actions has no release of this action: pinned to a commit.
-        uses: BunnyWay/actions/container-update-image@931a74b9c45ea9f9f01435fbbf1649830e67d3b3
-        with:
-          api_key: ${{ secrets.BUNNY_API_KEY }}
-          app_id: ${{ env.BUNNY_APP_ID }}
-          container: ${{ env.BUNNY_CONTAINER }}
-          image_tag: ${{ github.sha }}
-          image_digest: ${{ steps.build.outputs.digest }}
