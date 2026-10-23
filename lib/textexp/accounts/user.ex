@@ -28,7 +28,14 @@ defmodule Textexp.Accounts.User do
         confirm_on_update? false
         require_interaction? true
         confirmed_at_field :confirmed_at
-        auto_confirm_actions [:sign_in_with_magic_link, :reset_password_with_token]
+
+        auto_confirm_actions [
+          :sign_in_with_magic_link,
+          :reset_password_with_token,
+          :register_with_github,
+          :register_with_gitlab
+        ]
+
         sender Textexp.Accounts.User.Senders.SendNewUserConfirmationEmail
       end
     end
@@ -51,6 +58,29 @@ defmodule Textexp.Accounts.User do
       end
 
       remember_me :remember_me
+
+      # Sign-in with a GitHub or GitLab account (an OAuth application on each,
+      # see config/runtime.exs). Returning users are recognised by their
+      # account's identifier (see UserIdentity); a new one with the verified
+      # email of an existing account is linked to it.
+      github do
+        client_id Textexp.Secrets
+        client_secret Textexp.Secrets
+        redirect_uri Textexp.Secrets
+        identity_resource Textexp.Accounts.UserIdentity
+      end
+
+      # GitLab speaks OpenID Connect: gitlab.com, or a self-hosted instance.
+      oidc :gitlab do
+        base_url Textexp.Secrets
+        client_id Textexp.Secrets
+        client_secret Textexp.Secrets
+        redirect_uri Textexp.Secrets
+        identity_resource Textexp.Accounts.UserIdentity
+        authorization_params scope: "openid email profile"
+        # GitLab confirms email addresses before stating them verified.
+        trust_email_verified? true
+      end
 
       password :password do
         identity_field :email
@@ -79,6 +109,34 @@ defmodule Textexp.Accounts.User do
     read :get_by_email do
       description "Looks up a user by their email"
       get_by :email
+    end
+
+    create :register_with_github do
+      description "Registers, or signs in, a user with their GitHub account."
+      argument :user_info, :map, allow_nil?: false
+      argument :oauth_tokens, :map, allow_nil?: false, sensitive?: true
+      upsert? true
+      upsert_identity :unique_email
+      # an existing account is signed in, not modified
+      upsert_fields []
+
+      change AshAuthentication.GenerateTokenChange
+      change AshAuthentication.Strategy.OAuth2.IdentityChange
+      change Textexp.Accounts.User.Changes.OAuthRegistration
+    end
+
+    create :register_with_gitlab do
+      description "Registers, or signs in, a user with their GitLab account."
+      argument :user_info, :map, allow_nil?: false
+      argument :oauth_tokens, :map, allow_nil?: false, sensitive?: true
+      upsert? true
+      upsert_identity :unique_email
+      # an existing account is signed in, not modified
+      upsert_fields []
+
+      change AshAuthentication.GenerateTokenChange
+      change AshAuthentication.Strategy.OAuth2.IdentityChange
+      change Textexp.Accounts.User.Changes.OAuthRegistration
     end
 
     read :by_ids do

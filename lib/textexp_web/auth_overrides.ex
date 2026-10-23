@@ -1,6 +1,11 @@
 defmodule TextexpWeb.AuthOverrides do
   use AshAuthentication.Phoenix.Overrides
 
+  # The OAuth2 buttons have no GitLab icon of their own.
+  override AshAuthentication.Phoenix.Components.OAuth2 do
+    set :icon_src, %{gitlab: "/images/gitlab.svg"}
+  end
+
   # configure your UI overrides here
 
   # First argument to `override` is the component name you are overriding.

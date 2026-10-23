@@ -44,6 +44,15 @@ defmodule TextexpWeb.AuthController do
           address - confirm it to finish linking this provider to your account.
           """
 
+        # GitHub or GitLab: not configured, an email address it has not
+        # verified, or an unconfirmed account with the same address here.
+        {{provider, _phase}, _reason} when provider in [:github, :gitlab] ->
+          """
+          Signing in with #{if provider == :github, do: "GitHub", else: "GitLab"} failed.
+          Check that your email address is verified there. If you already have an
+          account here with this address, confirm it first, then sign in again.
+          """
+
         _ ->
           "Incorrect email or password"
       end

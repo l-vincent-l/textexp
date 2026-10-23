@@ -33,6 +33,28 @@ if System.get_env("DATABASE_ADAPTER") == "hrana" do
     auth_token: System.get_env("BUNNY_DATABASE_AUTH_TOKEN")
 end
 
+# Sign-in with GitHub and GitLab: an OAuth application on each, whose callback
+# URL is <app>/auth/user/github/callback (resp. .../gitlab/callback). Without
+# its client id and secret, signing in with a provider fails.
+auth_url =
+  if config_env() == :prod,
+    do: "https://#{System.get_env("PHX_HOST", "example.com")}/auth",
+    else: "http://localhost:#{System.get_env("PORT", "4000")}/auth"
+
+config :textexp, :github,
+  client_id: System.get_env("GITHUB_CLIENT_ID"),
+  client_secret: System.get_env("GITHUB_CLIENT_SECRET"),
+  redirect_uri: auth_url
+
+# GITLAB_URL, for a self-hosted instance, must be one trusted to verify its
+# users' email addresses as gitlab.com does: whoever runs it could otherwise
+# sign in to any account here.
+config :textexp, :gitlab,
+  base_url: System.get_env("GITLAB_URL", "https://gitlab.com"),
+  client_id: System.get_env("GITLAB_CLIENT_ID"),
+  client_secret: System.get_env("GITLAB_CLIENT_SECRET"),
+  redirect_uri: auth_url
+
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
   config :textexp, TextexpWeb.Endpoint,
