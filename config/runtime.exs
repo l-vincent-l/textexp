@@ -89,11 +89,20 @@ if config_env() == :prod do
         For example: /data/textexp.db
         """
 
-    config :textexp, Textexp.SqliteRepo, database: database_path
+    # SQLite runs one write transaction at a time: more connections only wait
+    # longer on its lock, and each keeps a page cache of its own. That cache is
+    # SQLite's default of 2 MB here, not ecto_sqlite3's 64 MB, which a growing
+    # database would fill on every connection.
+    config :textexp, Textexp.SqliteRepo,
+      database: database_path,
+      pool_size: String.to_integer(System.get_env("POOL_SIZE") || "3"),
+      cache_size: -2000
+  else
+    # The libSQL server serializes the writes itself; the pool only bounds the
+    # requests in flight.
+    config :textexp, Textexp.SqliteRepo,
+      pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
   end
-
-  config :textexp, Textexp.SqliteRepo,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
