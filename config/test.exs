@@ -1,7 +1,5 @@
 import Config
-config :textexp, token_signing_secret: "Xb78eQCnq56nT2QUImMgxpcIA+2c+rMw"
 config :bcrypt_elixir, log_rounds: 1
-config :ash, policies: [show_policy_breakdowns?: true], disable_async?: true
 
 # Configure your database
 #

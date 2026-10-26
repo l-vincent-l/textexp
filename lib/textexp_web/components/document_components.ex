@@ -13,7 +13,7 @@ defmodule TextexpWeb.DocumentComponents do
   A document of a list, as a card linking to it: its title, last update and
   excerpt (the first lines of its body).
 
-  The document needs its `title`, `excerpt` and `last_update`. In search
+  The document needs its `title`, `excerpt` and `updated_at`. In search
   results, `snippet` replaces the excerpt: the fragment of the body where the
   searched words appear, as `Textexp.Document.Snippet` segments.
   """
@@ -34,10 +34,10 @@ defmodule TextexpWeb.DocumentComponents do
           {@document.title || "Sans titre"}
         </h2>
         <time
-          datetime={DateTime.to_iso8601(@document.last_update)}
+          datetime={DateTime.to_iso8601(@document.updated_at)}
           class="shrink-0 text-xs tabular-nums text-base-content/50"
         >
-          {Calendar.strftime(@document.last_update, "%d/%m/%Y %H:%M")} UTC
+          {Calendar.strftime(@document.updated_at, "%d/%m/%Y %H:%M")} UTC
         </time>
       </div>
       <%!-- On one line: whitespace between the segments would show --%>

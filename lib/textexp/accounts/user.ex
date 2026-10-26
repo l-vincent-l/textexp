@@ -1,369 +1,82 @@
 defmodule Textexp.Accounts.User do
-  use Ash.Resource,
-    otp_app: :textexp,
-    domain: Textexp.Accounts,
-    data_layer: AshSqlite.DataLayer,
-    authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshAuthentication]
+  @moduledoc """
+  An account. Its owner signs in with a password, a link sent by email, or a
+  GitHub or GitLab account (see `Textexp.Accounts.UserIdentity`). Email
+  addresses are compared without case.
+  """
+  use Ecto.Schema
+  import Ecto.Changeset
+  import Ecto.Query
 
-  sqlite do
-    table "users"
-    repo Textexp.SqliteRepo
+  @primary_key {:id, :binary_id, autogenerate: true}
+  schema "users" do
+    field :email, :string
+    field :password, :string, virtual: true, redact: true
+    field :hashed_password, :string, redact: true
+    field :confirmed_at, :utc_datetime_usec
   end
 
-  # postgres do
-  #   table "tokens"
-  #   repo Textexp.Repo
-  # end
+  @doc "The users whose email address is `email`, whatever its case."
+  def by_email_query(email) do
+    from u in __MODULE__, where: fragment("lower(?)", u.email) == ^String.downcase(email)
+  end
 
-  authentication do
-    add_ons do
-      log_out_everywhere do
-        apply_on_password_change? true
-      end
+  @doc "A new account, or a change of its email address."
+  def email_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:email])
+    |> update_change(:email, &String.trim/1)
+    |> validate_required([:email])
+    |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/, message: "adresse invalide")
+    |> validate_length(:email, max: 160)
+    |> validate_unique_email()
+    |> unique_constraint(:email, name: "users_unique_email_index")
+  end
 
-      confirmation :confirm_new_user do
-        monitor_fields [:email]
-        confirm_on_create? true
-        confirm_on_update? false
-        require_interaction? true
-        confirmed_at_field :confirmed_at
-
-        auto_confirm_actions [
-          :sign_in_with_magic_link,
-          :reset_password_with_token,
-          :register_with_github,
-          :register_with_gitlab
-        ]
-
-        sender Textexp.Accounts.User.Senders.SendNewUserConfirmationEmail
-      end
-    end
-
-    tokens do
-      enabled? true
-      token_resource Textexp.Accounts.Token
-      signing_secret Textexp.Secrets
-      store_all_tokens? true
-      require_token_presence_for_authentication? true
-    end
-
-    strategies do
-      magic_link do
-        identity_field :email
-        registration_enabled? true
-        require_interaction? true
-
-        sender Textexp.Accounts.User.Senders.SendMagicLinkEmail
-      end
-
-      remember_me :remember_me
-
-      # Sign-in with a GitHub or GitLab account (an OAuth application on each,
-      # see config/runtime.exs). Returning users are recognised by their
-      # account's identifier (see UserIdentity); a new one with the verified
-      # email of an existing account is linked to it.
-      github do
-        client_id Textexp.Secrets
-        client_secret Textexp.Secrets
-        redirect_uri Textexp.Secrets
-        identity_resource Textexp.Accounts.UserIdentity
-      end
-
-      # GitLab speaks OpenID Connect: gitlab.com, or a self-hosted instance.
-      oidc :gitlab do
-        base_url Textexp.Secrets
-        client_id Textexp.Secrets
-        client_secret Textexp.Secrets
-        redirect_uri Textexp.Secrets
-        identity_resource Textexp.Accounts.UserIdentity
-        authorization_params scope: "openid email profile"
-        # GitLab confirms email addresses before stating them verified.
-        trust_email_verified? true
-      end
-
-      password :password do
-        identity_field :email
-        hash_provider AshAuthentication.BcryptProvider
-
-        resettable do
-          sender Textexp.Accounts.User.Senders.SendPasswordResetEmail
-          # these configurations will be the default in a future release
-          password_reset_action_name :reset_password_with_token
-          request_password_reset_action_name :request_password_reset_token
-        end
-      end
+  defp validate_unique_email(changeset) do
+    with email when is_binary(email) <- get_change(changeset, :email),
+         true <- Textexp.SqliteRepo.exists?(by_email_query(email)) do
+      add_error(changeset, :email, "un compte existe déjà avec cette adresse")
+    else
+      _ -> changeset
     end
   end
 
-  actions do
-    defaults [:read]
+  @doc """
+  Sets the password, hashed. Its confirmation, `password_confirmation`, must
+  match it.
+  """
+  def password_changeset(user, attrs) do
+    changeset =
+      user
+      |> cast(attrs, [:password])
+      |> validate_required([:password])
+      |> validate_length(:password, min: 8, max: 72, count: :bytes)
+      |> validate_confirmation(:password, required: true, message: "ne correspond pas")
 
-    read :get_by_subject do
-      description "Get a user by the subject claim in a JWT"
-      argument :subject, :string, allow_nil?: false
-      get? true
-      prepare AshAuthentication.Preparations.FilterBySubject
-    end
-
-    read :get_by_email do
-      description "Looks up a user by their email"
-      get_by :email
-    end
-
-    create :register_with_github do
-      description "Registers, or signs in, a user with their GitHub account."
-      argument :user_info, :map, allow_nil?: false
-      argument :oauth_tokens, :map, allow_nil?: false, sensitive?: true
-      upsert? true
-      upsert_identity :unique_email
-      # an existing account is signed in, not modified
-      upsert_fields []
-
-      change AshAuthentication.GenerateTokenChange
-      change AshAuthentication.Strategy.OAuth2.IdentityChange
-      change Textexp.Accounts.User.Changes.OAuthRegistration
-    end
-
-    create :register_with_gitlab do
-      description "Registers, or signs in, a user with their GitLab account."
-      argument :user_info, :map, allow_nil?: false
-      argument :oauth_tokens, :map, allow_nil?: false, sensitive?: true
-      upsert? true
-      upsert_identity :unique_email
-      # an existing account is signed in, not modified
-      upsert_fields []
-
-      change AshAuthentication.GenerateTokenChange
-      change AshAuthentication.Strategy.OAuth2.IdentityChange
-      change Textexp.Accounts.User.Changes.OAuthRegistration
-    end
-
-    read :by_ids do
-      description "The users of the given ids, e.g. the authors of comments"
-      argument :ids, {:array, :uuid}, allow_nil?: false
-      filter expr(id in ^arg(:ids))
-    end
-
-    create :sign_in_with_magic_link do
-      description "Sign in or register a user with magic link."
-
-      argument :token, :string do
-        description "The token from the magic link that was sent to the user"
-        allow_nil? false
-      end
-
-      argument :remember_me, :boolean do
-        description "Whether to generate a remember me token"
-        allow_nil? true
-      end
-
-      upsert? true
-      upsert_identity :unique_email
-      upsert_fields [:email]
-
-      # Uses the information from the token to create or sign in the user
-      change AshAuthentication.Strategy.MagicLink.SignInChange
-
-      change {AshAuthentication.Strategy.RememberMe.MaybeGenerateTokenChange,
-              strategy_name: :remember_me}
-
-      metadata :token, :string do
-        allow_nil? false
-      end
-    end
-
-    action :request_magic_link do
-      argument :email, :ci_string do
-        allow_nil? false
-      end
-
-      run AshAuthentication.Strategy.MagicLink.Request
-    end
-
-    update :change_password do
-      # Use this action to allow users to change their password by providing
-      # their current password and a new password.
-
-      require_atomic? false
-      accept []
-      argument :current_password, :string, sensitive?: true, allow_nil?: false
-
-      argument :password, :string,
-        sensitive?: true,
-        allow_nil?: false,
-        constraints: [min_length: 8]
-
-      argument :password_confirmation, :string, sensitive?: true, allow_nil?: false
-
-      validate confirm(:password, :password_confirmation)
-
-      validate {AshAuthentication.Strategy.Password.PasswordValidation,
-                strategy_name: :password, password_argument: :current_password}
-
-      change {AshAuthentication.Strategy.Password.HashPasswordChange, strategy_name: :password}
-    end
-
-    read :sign_in_with_password do
-      description "Attempt to sign in using a email and password."
-      get? true
-
-      argument :email, :ci_string do
-        description "The email to use for retrieving the user."
-        allow_nil? false
-      end
-
-      argument :password, :string do
-        description "The password to check for the matching user."
-        allow_nil? false
-        sensitive? true
-      end
-
-      # validates the provided email and password and generates a token
-      prepare AshAuthentication.Strategy.Password.SignInPreparation
-
-      metadata :token, :string do
-        description "A JWT that can be used to authenticate the user."
-        allow_nil? false
-      end
-    end
-
-    read :sign_in_with_token do
-      # In the generated sign in components, we validate the
-      # email and password directly in the LiveView
-      # and generate a short-lived token that can be used to sign in over
-      # a standard controller action, exchanging it for a standard token.
-      # This action performs that exchange. If you do not use the generated
-      # liveviews, you may remove this action, and set
-      # `sign_in_tokens_enabled? false` in the password strategy.
-
-      description "Attempt to sign in using a short-lived sign in token."
-      get? true
-
-      argument :token, :string do
-        description "The short-lived sign in token."
-        allow_nil? false
-        sensitive? true
-      end
-
-      # validates the provided sign in token and generates a token
-      prepare AshAuthentication.Strategy.Password.SignInWithTokenPreparation
-
-      metadata :token, :string do
-        description "A JWT that can be used to authenticate the user."
-        allow_nil? false
-      end
-    end
-
-    create :register_with_password do
-      description "Register a new user with a email and password."
-
-      argument :email, :ci_string do
-        allow_nil? false
-      end
-
-      argument :password, :string do
-        description "The proposed password for the user, in plain text."
-        allow_nil? false
-        constraints min_length: 8
-        sensitive? true
-      end
-
-      argument :password_confirmation, :string do
-        description "The proposed password for the user (again), in plain text."
-        allow_nil? false
-        sensitive? true
-      end
-
-      # Sets the email from the argument
-      change set_attribute(:email, arg(:email))
-
-      # Hashes the provided password
-      change AshAuthentication.Strategy.Password.HashPasswordChange
-
-      # Generates an authentication token for the user
-      change AshAuthentication.GenerateTokenChange
-
-      # validates that the password matches the confirmation
-      validate AshAuthentication.Strategy.Password.PasswordConfirmationValidation
-
-      metadata :token, :string do
-        description "A JWT that can be used to authenticate the user."
-        allow_nil? false
-      end
-    end
-
-    action :request_password_reset_token do
-      description "Send password reset instructions to a user if they exist."
-
-      argument :email, :ci_string do
-        allow_nil? false
-      end
-
-      # creates a reset token and invokes the relevant senders
-      run {AshAuthentication.Strategy.Password.RequestPasswordReset, action: :get_by_email}
-    end
-
-    update :reset_password_with_token do
-      argument :reset_token, :string do
-        allow_nil? false
-        sensitive? true
-      end
-
-      argument :password, :string do
-        description "The proposed password for the user, in plain text."
-        allow_nil? false
-        constraints min_length: 8
-        sensitive? true
-      end
-
-      argument :password_confirmation, :string do
-        description "The proposed password for the user (again), in plain text."
-        allow_nil? false
-        sensitive? true
-      end
-
-      # validates the provided reset token
-      validate AshAuthentication.Strategy.Password.ResetTokenValidation
-
-      # validates that the password matches the confirmation
-      validate AshAuthentication.Strategy.Password.PasswordConfirmationValidation
-
-      # Hashes the provided password
-      change AshAuthentication.Strategy.Password.HashPasswordChange
-
-      # Generates an authentication token for the user
-      change AshAuthentication.GenerateTokenChange
+    if changeset.valid? do
+      changeset
+      |> put_change(:hashed_password, Bcrypt.hash_pwd_salt(get_change(changeset, :password)))
+      |> delete_change(:password)
+    else
+      changeset
     end
   end
 
-  policies do
-    bypass AshAuthentication.Checks.AshAuthenticationInteraction do
-      authorize_if always()
-    end
+  @doc "Confirms the email address."
+  def confirm_changeset(user), do: change(user, confirmed_at: DateTime.utc_now())
 
-    # Any signed-in user may see the others, as they see all documents.
-    policy action(:by_ids) do
-      authorize_if actor_present()
-    end
+  @doc """
+  Whether `password` is the user's. Without user or password, a hash is still
+  computed, so that the time taken does not tell whether the account exists.
+  """
+  def valid_password?(%__MODULE__{hashed_password: hashed}, password)
+      when is_binary(hashed) and byte_size(password) > 0 do
+    Bcrypt.verify_pass(password, hashed)
   end
 
-  attributes do
-    uuid_primary_key :id
-
-    attribute :email, :ci_string do
-      allow_nil? false
-      public? true
-    end
-
-    attribute :hashed_password, :string do
-      sensitive? true
-    end
-
-    attribute :confirmed_at, :utc_datetime_usec
-  end
-
-  identities do
-    identity :unique_email, [:email]
+  def valid_password?(_user, _password) do
+    Bcrypt.no_user_verify()
+    false
   end
 end

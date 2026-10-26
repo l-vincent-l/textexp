@@ -18,10 +18,10 @@ defmodule Textexp.Document.Search do
   @snippet_length 200
 
   @doc """
-  Builds the index of the documents `actor` can read.
+  Builds the index of the documents `user` can read.
   """
-  def new_index(actor) do
-    documents = Document.list_documents!(load: [:text], actor: actor)
+  def new_index(user) do
+    documents = Document.list_documents_with_text(user)
 
     with {:ok, index} <- Index.create_in_ram(schema()),
          {:ok, writer} <- IndexWriter.new(index, @writer_memory_budget),
@@ -32,12 +32,12 @@ defmodule Textexp.Document.Search do
   end
 
   @doc """
-  The documents matching `query`, best match first, with their `last_update`
-  and, in their `:snippet` metadata, the fragment of their body around the
-  words of the query (see `Textexp.Document.Snippet.segments/2`), `nil` when
-  only the title matches. An invalid query (e.g. `cats AND (`) matches nothing.
+  The documents matching `query`, best match first, with in their `snippet`
+  the fragment of their body around the words of the query (see
+  `Textexp.Document.Snippet.segments/2`), `nil` when only the title matches.
+  An invalid query (e.g. `cats AND (`) matches nothing.
   """
-  def search(index, query, actor) do
+  def search(index, query, user) do
     case String.trim(query) do
       "" ->
         []
@@ -49,10 +49,8 @@ defmodule Textexp.Document.Search do
 
             hits
             |> Enum.map(fn {id, _body} -> id end)
-            |> load_documents(actor)
-            |> Enum.map(fn document ->
-              Ash.Resource.put_metadata(document, :snippet, snippet.(bodies[document.id]))
-            end)
+            |> load_documents(user)
+            |> Enum.map(&%{&1 | snippet: snippet.(bodies[&1.id])})
 
           {:error, _reason} ->
             []
@@ -68,11 +66,11 @@ defmodule Textexp.Document.Search do
   end
 
   defp add_documents(writer, documents) do
-    Enum.reduce_while(documents, :ok, fn document, :ok ->
+    Enum.reduce_while(documents, :ok, fn {document, text}, :ok ->
       fields = %{
         "id" => document.id,
         "title" => document.title || "",
-        "body" => document.text
+        "body" => text
       }
 
       case IndexWriter.add_document(writer, fields) do
@@ -103,17 +101,10 @@ defmodule Textexp.Document.Search do
     end
   end
 
-  defp load_documents([], _actor), do: []
+  defp load_documents([], _user), do: []
 
-  defp load_documents(ids, actor) do
-    documents =
-      [
-        query: [filter: [id: [in: ids]], select: [:title, :excerpt, :updated_at]],
-        load: [:last_update],
-        actor: actor
-      ]
-      |> Document.list_documents!()
-      |> Map.new(&{&1.id, &1})
+  defp load_documents(ids, user) do
+    documents = user |> Document.list_documents(ids) |> Map.new(&{&1.id, &1})
 
     # a document may have been deleted, or made unreadable, since it was indexed
     ids |> Enum.map(&documents[&1]) |> Enum.reject(&is_nil/1)

@@ -1,19 +1,15 @@
 defmodule Textexp.Document.YPersistenceTest do
   use Textexp.DataCase
 
+  alias Textexp.Fixtures
+
   alias Textexp.Document
   alias Textexp.Document.YPersistence
   alias YPhoenix.DocServer
 
-  defp register_user do
-    Textexp.Accounts.User
-    |> Ash.Changeset.for_create(:register_with_password, %{
-      email: "persistence-#{System.unique_integer([:positive])}@example.com",
-      password: "a-long-password",
-      password_confirmation: "a-long-password"
-    })
-    |> Ash.create!(authorize?: false)
-  end
+  defp register_user, do: Fixtures.register_user()
+
+  defp saved(id), do: Textexp.SqliteRepo.get(Document.Document, id)
 
   defp text_update(content) do
     source = Yex.Doc.new()
@@ -56,11 +52,11 @@ defmodule Textexp.Document.YPersistenceTest do
 
   # Titled, so that unbind keeps it (see "unbind of an empty document").
   setup do
-    %{document: Document.create_document!(%{title: "Notes"}, actor: register_user())}
+    %{document: Fixtures.create_document!(register_user(), %{title: "Notes"})}
   end
 
   test "loading applies the saved snapshot", %{document: document} do
-    Document.save_snapshot!(document, text_update("hello"), authorize?: false)
+    Document.save_snapshot(document.id, text_update("hello"), nil)
 
     assert loaded_text(document.id) == "hello"
   end
@@ -70,7 +66,7 @@ defmodule Textexp.Document.YPersistenceTest do
     state = YPersistence.bind(%{}, document.id, doc)
     state = edit(state, document, doc, "hello")
 
-    refute Document.get_document!(document.id, authorize?: false).snapshot
+    refute Document.get_document!(document.id).snapshot
 
     YPersistence.flush(state, document.id, doc)
 
@@ -86,7 +82,7 @@ defmodule Textexp.Document.YPersistenceTest do
 
     YPersistence.flush(state, document.id, doc)
 
-    assert Document.get_document!(document.id, authorize?: false).excerpt == "Title\nBody"
+    assert Document.get_document!(document.id).excerpt == "Title\nBody"
   end
 
   test "flush does nothing when nothing changed", %{document: document} do
@@ -95,7 +91,7 @@ defmodule Textexp.Document.YPersistenceTest do
 
     assert YPersistence.flush(state, document.id, doc) == state
 
-    assert Document.get_document!(document.id, authorize?: false).updated_at ==
+    assert Document.get_document!(document.id).updated_at ==
              document.updated_at
   end
 
@@ -105,10 +101,10 @@ defmodule Textexp.Document.YPersistenceTest do
     state = edit(state, document, doc, "hello")
 
     state = YPersistence.flush(state, document.id, doc)
-    saved = Document.get_document!(document.id, authorize?: false)
+    saved = Document.get_document!(document.id)
 
     assert YPersistence.flush(state, document.id, doc) == state
-    assert Document.get_document!(document.id, authorize?: false).updated_at == saved.updated_at
+    assert Document.get_document!(document.id).updated_at == saved.updated_at
   end
 
   test "unbind saves pending edits", %{document: document} do
@@ -122,8 +118,8 @@ defmodule Textexp.Document.YPersistenceTest do
   end
 
   describe "an untitled document" do
-    setup %{document: %{owner: owner}} do
-      document = Document.create_document!(%{}, actor: owner)
+    setup %{document: %{owner_id: owner_id}} do
+      document = Fixtures.create_document!(%{id: owner_id})
       Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.topic(document.id))
       %{document: document}
     end
@@ -139,7 +135,7 @@ defmodule Textexp.Document.YPersistenceTest do
       YPersistence.update_v1(state, update, document_id, doc)
 
       title = "Notes du #{Calendar.strftime(Date.utc_today(), "%d-%m-%Y")}"
-      assert Document.get_document!(document_id, authorize?: false).title == title
+      assert Document.get_document!(document_id).title == title
       assert_receive {:document_updated, ^document_id, _at, ^title}
     end
 
@@ -152,7 +148,7 @@ defmodule Textexp.Document.YPersistenceTest do
       state = YPersistence.update_v1(state, update, document.id, doc)
       YPersistence.flush(state, document.id, doc)
 
-      assert Document.get_document!(document.id, authorize?: false).title == nil
+      assert Document.get_document!(document.id).title == nil
     end
   end
 
@@ -166,19 +162,17 @@ defmodule Textexp.Document.YPersistenceTest do
     state = edit(state, document, doc, "hello")
     YPersistence.flush(state, document.id, doc)
 
-    updated_at = Document.get_document!(document.id, authorize?: false).updated_at
+    updated_at = Document.get_document!(document.id).updated_at
     assert_receive {:document_updated, ^document_id, ^updated_at, "Notes"}
   end
 
-  test "last_update is the time of the last save", %{document: document} do
+  test "the last update is the time of the last save", %{document: document} do
     doc = Yex.Doc.new()
     state = YPersistence.bind(%{}, document.id, doc)
     state = edit(state, document, doc, "hello")
     YPersistence.flush(state, document.id, doc)
 
-    saved = Document.get_document!(document.id, load: [:last_update], authorize?: false)
-    assert saved.last_update == saved.updated_at
-    assert DateTime.compare(saved.last_update, document.updated_at) == :gt
+    assert DateTime.compare(saved(document.id).updated_at, document.updated_at) == :gt
   end
 
   test "emits a telemetry event for each database operation", %{document: document} do
@@ -209,7 +203,7 @@ defmodule Textexp.Document.YPersistenceTest do
 
   describe "unbind of an empty document" do
     setup do
-      %{document: Document.create_document!(%{}, actor: register_user())}
+      %{document: Fixtures.create_document!(register_user(), %{})}
     end
 
     defp unbind_with_body(document, blocks) do
@@ -229,20 +223,20 @@ defmodule Textexp.Document.YPersistenceTest do
       state = YPersistence.bind(%{}, document.id, doc)
       YPersistence.unbind(state, document.id, doc)
 
-      assert {:error, _} = Document.get_document(document.id, authorize?: false)
+      refute saved(document.id)
       assert_receive {:document_deleted, ^document_id}
     end
 
     test "deletes a document whose body only has empty paragraphs", %{document: document} do
       unbind_with_body(document, [{"paragraph", ""}, {"paragraph", "  "}])
 
-      assert {:error, _} = Document.get_document(document.id, authorize?: false)
+      refute saved(document.id)
     end
 
     test "keeps an untitled document with text", %{document: document} do
       unbind_with_body(document, [{"paragraph", ""}, {"paragraph", "hello"}])
 
-      assert {:ok, %{snapshot: snapshot}} = Document.get_document(document.id, authorize?: false)
+      assert %{snapshot: snapshot} = saved(document.id)
       assert snapshot
     end
 
@@ -250,15 +244,15 @@ defmodule Textexp.Document.YPersistenceTest do
          %{document: document} do
       unbind_with_body(document, [{"image", ""}])
 
-      assert {:ok, _} = Document.get_document(document.id, authorize?: false)
+      assert saved(document.id)
     end
 
     test "keeps a titled document without body", %{document: document} do
-      document = Document.rename_document!(document, "Notes", authorize?: false)
+      document = document |> Ecto.Changeset.change(title: "Notes") |> Textexp.SqliteRepo.update!()
 
       unbind_with_body(document, [])
 
-      assert {:ok, _} = Document.get_document(document.id, authorize?: false)
+      assert saved(document.id)
     end
   end
 
@@ -287,8 +281,8 @@ defmodule Textexp.Document.YPersistenceTest do
     end
 
     test "starting does not write anything", %{document: document} do
-      Document.save_snapshot!(document, text_update("hello"), authorize?: false)
-      saved = Document.get_document!(document.id, authorize?: false)
+      Document.save_snapshot(document.id, text_update("hello"), nil)
+      saved = Document.get_document!(document.id)
 
       pid = start_doc_server(document)
       # the load-time update message is handled before this call returns
@@ -296,14 +290,14 @@ defmodule Textexp.Document.YPersistenceTest do
       send(pid, :flush)
       _ = :sys.get_state(pid)
 
-      assert Document.get_document!(document.id, authorize?: false).updated_at == saved.updated_at
+      assert Document.get_document!(document.id).updated_at == saved.updated_at
     end
 
     test "edits are saved by the periodic flush", %{document: document} do
       pid = start_doc_server(document)
       send_edit(pid, "hello")
 
-      refute Document.get_document!(document.id, authorize?: false).snapshot
+      refute Document.get_document!(document.id).snapshot
 
       # message normally sent by the DocServer's timer
       send(pid, :flush)

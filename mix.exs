@@ -52,16 +52,10 @@ defmodule Textexp.MixProject do
       # (0.36) and y_ex (0.37), both optional.
       {:rustler, "~> 0.37", runtime: false, override: true},
       {:y_ex, "~> 0.13.0"},
-      {:igniter, "~> 0.6", only: [:dev, :test]},
       {:bcrypt_elixir, "~> 3.0"},
-      {:picosat_elixir, "~> 0.2"},
-      {:ash_authentication_phoenix, "~> 2.0"},
-      {:sourceror, "~> 1.8", only: [:dev, :test]},
-      {:ash_admin, "~> 1.0"},
-      {:ash_phoenix, "~> 2.0"},
-      {:ash_sqlite, "~> 0.2.19"},
+      # Sign-in with GitHub and GitLab (OAuth 2, OpenID Connect).
+      {:assent, "~> 0.2.13"},
       {:ecto_hrana, github: "l-vincent-l/ecto_hrana"},
-      {:ash, "~> 3.0"},
       {:phoenix, "~> 1.8.15"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
@@ -106,10 +100,10 @@ defmodule Textexp.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get", "ash.setup", "assets.setup", "assets.build", "run priv/repo/seeds.exs"],
+      setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["ash.setup --quiet", "test"],
+      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind textexp", "esbuild textexp"],
       "assets.deploy": [

@@ -2,113 +2,103 @@ defmodule Textexp.Document.MembershipTest do
   use Textexp.DataCase
 
   alias Textexp.Document
+  alias Textexp.Fixtures
 
-  defp register_user do
-    Textexp.Accounts.User
-    |> Ash.Changeset.for_create(:register_with_password, %{
-      email: "member-#{System.unique_integer([:positive])}@example.com",
-      password: "a-long-password",
-      password_confirmation: "a-long-password"
-    })
-    |> Ash.create!(authorize?: false)
-  end
+  defp register_user, do: Fixtures.register_user()
+
+  defp share(owner, document, email, role),
+    do: Document.share_document(owner, document.id, %{email: email, role: role})
 
   setup do
     owner = register_user()
-    %{owner: owner, document: Document.create_document!(%{title: "Notes"}, actor: owner)}
+    %{owner: owner, document: Fixtures.create_document!(owner, %{title: "Notes"})}
   end
 
   describe "share_document" do
     test "gives an editor the right to read and write", %{owner: owner, document: document} do
       editor = register_user()
 
-      assert {:ok, %{role: :editor}} =
-               Document.share_document(document.id, editor.email, :editor, actor: owner)
+      assert {:ok, %{role: :editor}} = share(owner, document, editor.email, :editor)
 
-      assert {:ok, document} = Document.get_document(document.id, actor: editor)
-      assert Ash.can?({document, :rename}, editor)
+      assert {:ok, %{role: :editor} = document} = Document.get_document(document.id, editor)
+      assert {:ok, _} = Document.rename_document(document, editor, "Renamed")
     end
 
     test "gives a viewer the right to read only", %{owner: owner, document: document} do
       viewer = register_user()
-      Document.share_document!(document.id, viewer.email, :viewer, actor: owner)
+      Fixtures.share!(owner, document, viewer, :viewer)
 
-      assert {:ok, document} = Document.get_document(document.id, actor: viewer)
-      refute Ash.can?({document, :rename}, viewer)
+      assert {:ok, %{role: :viewer} = document} = Document.get_document(document.id, viewer)
+      assert {:error, :forbidden} = Document.rename_document(document, viewer, "Renamed")
     end
 
     test "changes the role of a member", %{owner: owner, document: document} do
       member = register_user()
-      Document.share_document!(document.id, member.email, :viewer, actor: owner)
-      Document.share_document!(document.id, to_string(member.email), :editor, actor: owner)
+      Fixtures.share!(owner, document, member, :viewer)
+      Fixtures.share!(owner, document, member, :editor)
 
-      assert [%{role: :editor}] = Document.list_document_members!(document.id, actor: owner)
+      assert [%{role: :editor}] = Document.list_members(owner, document.id)
     end
 
     test "finds the user whatever the case of the address", %{owner: owner, document: document} do
       member = register_user()
-      email = member.email |> to_string() |> String.upcase()
 
-      assert {:ok, _} = Document.share_document(document.id, email, :viewer, actor: owner)
+      assert {:ok, _} = share(owner, document, String.upcase(member.email), :viewer)
     end
 
     test "refuses an address without account", %{owner: owner, document: document} do
-      assert {:error, error} =
-               Document.share_document(document.id, "nobody@example.com", :viewer, actor: owner)
-
-      assert Exception.message(error) =~ "aucun compte avec cette adresse"
+      assert {:error, changeset} = share(owner, document, "nobody@example.com", :viewer)
+      assert "aucun compte avec cette adresse" in errors_on(changeset).email
     end
 
     test "refuses the owner's own address", %{owner: owner, document: document} do
-      assert {:error, error} =
-               Document.share_document(document.id, owner.email, :editor, actor: owner)
-
-      assert Exception.message(error) =~ "propriétaire"
+      assert {:error, changeset} = share(owner, document, owner.email, :editor)
+      assert [message] = errors_on(changeset).email
+      assert message =~ "propriétaire"
     end
 
     test "is reserved to the owner", %{owner: owner, document: document} do
       editor = register_user()
-      Document.share_document!(document.id, editor.email, :editor, actor: owner)
+      Fixtures.share!(owner, document, editor, :editor)
 
-      assert {:error, %Ash.Error.Forbidden{}} =
-               Document.share_document(document.id, register_user().email, :editor, actor: editor)
+      assert {:error, :forbidden} = share(editor, document, register_user().email, :editor)
     end
 
     test "leaves the document's last update unchanged", %{owner: owner, document: document} do
-      before = Document.get_document!(document.id, load: [:last_update], actor: owner)
-      Document.share_document!(document.id, register_user().email, :viewer, actor: owner)
-      after_share = Document.get_document!(document.id, load: [:last_update], actor: owner)
+      {:ok, before} = Document.get_document(document.id, owner)
+      Fixtures.share!(owner, document, register_user(), :viewer)
+      {:ok, after_share} = Document.get_document(document.id, owner)
 
-      assert after_share.last_update == before.last_update
+      assert after_share.updated_at == before.updated_at
     end
   end
 
-  describe "list_document_members" do
+  describe "list_members" do
     test "lists the members to the owner, not to others", %{owner: owner, document: document} do
       member = register_user()
-      Document.share_document!(document.id, member.email, :viewer, actor: owner)
+      Fixtures.share!(owner, document, member, :viewer)
 
-      assert [%{user_id: user_id}] = Document.list_document_members!(document.id, actor: owner)
+      assert [%{user_id: user_id}] = Document.list_members(owner, document.id)
       assert user_id == member.id
-      assert Document.list_document_members!(document.id, actor: register_user()) == []
+      assert Document.list_members(register_user(), document.id) == []
     end
   end
 
-  describe "remove_document_member" do
+  describe "remove_member" do
     test "takes the access back", %{owner: owner, document: document} do
       member = register_user()
-      membership = Document.share_document!(document.id, member.email, :viewer, actor: owner)
+      membership = Fixtures.share!(owner, document, member, :viewer)
 
-      assert :ok = Document.remove_document_member(membership, actor: owner)
-      assert {:error, _} = Document.get_document(document.id, actor: member)
+      assert :ok = Document.remove_member(owner, membership.id)
+      assert {:error, _} = Document.get_document(document.id, member)
     end
 
     test "is reserved to the owner", %{owner: owner, document: document} do
       member = register_user()
-      membership = Document.share_document!(document.id, member.email, :editor, actor: owner)
+      membership = Fixtures.share!(owner, document, member, :editor)
 
-      assert {:error, %Ash.Error.Forbidden{}} =
-               Document.remove_document_member(membership, actor: member)
+      assert {:error, :not_found} = Document.remove_member(member, membership.id)
+      assert {:ok, _} = Document.get_document(document.id, member)
     end
   end
 end

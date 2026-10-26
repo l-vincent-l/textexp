@@ -10,7 +10,8 @@ defmodule TextexpWeb.LiveUserAuth do
   # To use, place the following at the top of that liveview:
   # on_mount {TextexpWeb.LiveUserAuth, :current_user}
   def on_mount(:current_user, _params, session, socket) do
-    {:cont, AshAuthentication.Phoenix.LiveSession.assign_new_resources(socket, session)}
+    {:cont,
+     assign_new(socket, :current_user, fn -> TextexpWeb.UserAuth.session_user(session) end)}
   end
 
   def on_mount(:live_user_optional, _params, _session, socket) do

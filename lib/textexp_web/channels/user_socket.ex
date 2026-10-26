@@ -27,17 +27,10 @@ defmodule TextexpWeb.UserSocket do
   # performing token verification on connect.
   @impl true
   def connect(_params, socket, connect_info) do
-    session = connect_info[:session] || %{}
-
-    socket =
-      AshAuthentication.Plug.Helpers.assign_new_resources(
-        socket,
-        session,
-        fn socket, key, fun -> assign(socket, key, fun.()) end,
-        otp_app: :textexp
-      )
-
-    if socket.assigns[:current_user], do: {:ok, socket}, else: :error
+    case TextexpWeb.UserAuth.session_user(connect_info[:session] || %{}) do
+      nil -> :error
+      user -> {:ok, assign(socket, :current_user, user)}
+    end
   end
 
   # Socket IDs are topics that allow you to identify all sockets for a given user:

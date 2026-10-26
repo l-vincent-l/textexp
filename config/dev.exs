@@ -1,5 +1,4 @@
 import Config
-config :ash, policies: [show_policy_breakdowns?: true]
 
 # Configure your database
 config :textexp, Textexp.SqliteRepo,
@@ -53,7 +52,7 @@ config :textexp, TextexpWeb.Endpoint,
 # The LiveDashboard is open in development.
 config :textexp, :dashboard_auth, false
 
-config :textexp, dev_routes: true, token_signing_secret: "pnDqW8PjnLqxvVO3NTDaJRdGtNO/Ofyo"
+config :textexp, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
