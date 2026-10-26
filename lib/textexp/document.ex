@@ -156,19 +156,39 @@ defmodule Textexp.Document do
   and its excerpt. A document saved without title, but with text, gets a
   dated one. Without text, it stays untitled so that it is deleted when left
   (see YPersistence.unbind).
+
+  One `UPDATE … RETURNING`: the document saved, with its `title` and
+  `updated_at`.
   """
   def save_snapshot(id, snapshot, excerpt) do
-    document = Repo.one!(from d in Document, where: d.id == ^id, select: struct(d, [:id, :title]))
+    dated_title = "Notes du #{Calendar.strftime(Date.utc_today(), "%d-%m-%Y")}"
 
-    title =
-      if (document.title == nil or String.trim(document.title) == "") and excerpt != nil,
-        do: "Notes du #{Calendar.strftime(Date.utc_today(), "%d-%m-%Y")}",
-        else: document.title
+    {1, [document]} =
+      Repo.update_all(
+        from(d in Document,
+          where: d.id == ^id,
+          update: [
+            set: [
+              snapshot: ^snapshot,
+              excerpt: ^excerpt,
+              updated_at: ^DateTime.utc_now(),
+              # blank: NULL, or only spaces, tabs and line breaks
+              title:
+                fragment(
+                  "CASE WHEN coalesce(trim(?, char(32, 9, 10, 13)), '') = '' AND ? IS NOT NULL THEN ? ELSE ? END",
+                  d.title,
+                  ^excerpt,
+                  ^dated_title,
+                  d.title
+                )
+            ]
+          ],
+          select: struct(d, [:id, :title, :updated_at])
+        ),
+        []
+      )
 
     document
-    |> Changeset.change(snapshot: snapshot, excerpt: excerpt, title: title)
-    |> Changeset.force_change(:updated_at, DateTime.utc_now())
-    |> Repo.update!()
   end
 
   def delete_document(id) do
