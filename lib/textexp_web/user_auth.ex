@@ -55,10 +55,17 @@ defmodule TextexpWeb.UserAuth do
     |> delete_resp_cookie(@remember_me_cookie, @remember_me_options)
   end
 
-  @doc "Closes the LiveViews of the given session tokens, e.g. once revoked."
+  @doc """
+  Closes the LiveViews of the given session tokens, e.g. once revoked, and the
+  document sockets of their users (sessions still valid reconnect).
+  """
   def disconnect_sessions(tokens) do
     for %{token: token} <- tokens do
       TextexpWeb.Endpoint.broadcast(session_topic(token), "disconnect", %{})
+    end
+
+    for user_id <- tokens |> Enum.map(& &1.user_id) |> Enum.uniq() do
+      TextexpWeb.Endpoint.broadcast("user_socket:#{user_id}", "disconnect", %{})
     end
 
     :ok

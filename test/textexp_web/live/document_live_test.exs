@@ -7,7 +7,7 @@ defmodule TextexpWeb.DocumentLiveTest do
 
   alias Textexp.Document
 
-  defp register_user, do: Fixtures.register_user()
+  defp register_user, do: Fixtures.confirmed_user()
 
   defp log_in(conn, user), do: Fixtures.log_in(conn, user)
 

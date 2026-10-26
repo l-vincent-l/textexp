@@ -10,7 +10,7 @@ defmodule TextexpWeb.YDocRoomChannelTest do
 
   @endpoint TextexpWeb.Endpoint
 
-  defp register_user, do: Fixtures.register_user()
+  defp register_user, do: Fixtures.confirmed_user()
 
   defp join_as(user, document_id) do
     UserSocket

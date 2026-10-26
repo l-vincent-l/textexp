@@ -5,8 +5,9 @@ defmodule Textexp.Accounts do
   session token (see `Textexp.Accounts.UserToken`).
 
   An account registered with a password can be used at once; a link is sent to
-  confirm its address. Using a sign-in link or a password reset link also
-  confirms it, as does GitHub or GitLab for the addresses they verified.
+  confirm its address, used signed in to the account. Using a sign-in link or a
+  password reset link also confirms it, as does GitHub or GitLab for the
+  addresses they verified.
   """
   import Ecto.Query
 
@@ -59,9 +60,17 @@ defmodule Textexp.Accounts do
 
   def deliver_confirmation_instructions(%User{}, _confirm_url), do: {:error, :already_confirmed}
 
-  @doc "Confirms the address of the user of a confirmation link."
-  def confirm_user(token) do
-    with {user, _token} <- get_by_link_token(token, "confirm"),
+  @doc """
+  Confirms the address of `user`, the user of a confirmation link.
+
+  Whoever registered may not own the address: the owner of the address, who
+  receives the link, must not confirm an account whose password someone else
+  chose, and that they would then share. So the link is only used by the
+  user signed in to the account; the owner of the address who did not
+  register resets the password instead.
+  """
+  def confirm_user(%User{id: user_id}, token) do
+    with {%User{id: ^user_id} = user, _token} <- get_by_link_token(token, "confirm"),
          {:ok, {user, _expired}} <-
            user |> User.confirm_changeset() |> update_user_and_delete_tokens(["confirm"]) do
       {:ok, user}

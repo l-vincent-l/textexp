@@ -123,25 +123,46 @@ defmodule TextexpWeb.AuthController do
     end
   end
 
+  # The link is used signed in to the account (see Accounts.confirm_user/2):
+  # signed out, one signs in first and comes back here.
   def confirm(conn, %{"token" => token}) do
-    link_page(
-      conn,
-      token,
-      "confirm",
-      "Confirm your email address",
-      ~p"/confirm_new_user/#{token}"
-    )
+    user = Accounts.get_user_by_link_token(token, "confirm")
+
+    cond do
+      is_nil(user) ->
+        invalid_link(conn)
+
+      is_nil(conn.assigns.current_user) ->
+        conn
+        |> put_session(:return_to, ~p"/confirm_new_user/#{token}")
+        |> put_flash(:info, """
+        Sign in to confirm your email address.
+        If you did not create this account, reset its password instead.
+        """)
+        |> redirect(to: ~p"/sign-in")
+
+      conn.assigns.current_user.id != user.id ->
+        conn
+        |> put_flash(:error, "This link confirms another account: sign out first.")
+        |> redirect(to: ~p"/")
+
+      true ->
+        render(conn, :email_link,
+          title: "Confirm your email address",
+          email: user.email,
+          action: ~p"/confirm_new_user/#{token}"
+        )
+    end
   end
 
   def confirm_user(conn, %{"token" => token}) do
-    case Accounts.confirm_user(token) do
-      {:ok, user} ->
-        conn
-        |> put_flash(:info, "Your email address has now been confirmed")
-        |> UserAuth.log_in_user(user)
-
-      :error ->
-        invalid_link(conn)
+    with %{} = current_user <- conn.assigns.current_user,
+         {:ok, _user} <- Accounts.confirm_user(current_user, token) do
+      conn
+      |> put_flash(:info, "Your email address has now been confirmed")
+      |> redirect(to: ~p"/documents")
+    else
+      _ -> invalid_link(conn)
     end
   end
 

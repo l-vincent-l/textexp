@@ -18,6 +18,14 @@ defmodule Textexp.Fixtures do
     user
   end
 
+  @doc "A user registered with a password, its address confirmed."
+  def confirmed_user(email \\ "user-#{System.unique_integer([:positive])}@example.com") do
+    email
+    |> register_user()
+    |> Ecto.Changeset.change(confirmed_at: DateTime.utc_now())
+    |> Textexp.SqliteRepo.update!()
+  end
+
   @doc "A document of `owner`."
   def create_document!(owner, attrs \\ %{}) do
     {:ok, document} = Textexp.Document.create_document(owner, attrs)

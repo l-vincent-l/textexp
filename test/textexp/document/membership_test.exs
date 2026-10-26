@@ -4,7 +4,7 @@ defmodule Textexp.Document.MembershipTest do
   alias Textexp.Document
   alias Textexp.Fixtures
 
-  defp register_user, do: Fixtures.register_user()
+  defp register_user, do: Fixtures.confirmed_user()
 
   defp share(owner, document, email, role),
     do: Document.share_document(owner, document.id, %{email: email, role: role})
@@ -49,6 +49,11 @@ defmodule Textexp.Document.MembershipTest do
     test "refuses an address without account", %{owner: owner, document: document} do
       assert {:error, changeset} = share(owner, document, "nobody@example.com", :viewer)
       assert "aucun compte avec cette adresse" in errors_on(changeset).email
+    end
+
+    test "refuses an unconfirmed account", %{owner: owner, document: document} do
+      assert {:error, changeset} = share(owner, document, Fixtures.register_user().email, :viewer)
+      assert "ce compte n'a pas encore confirmé son adresse" in errors_on(changeset).email
     end
 
     test "refuses the owner's own address", %{owner: owner, document: document} do

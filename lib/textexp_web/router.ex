@@ -45,7 +45,7 @@ defmodule TextexpWeb.Router do
     post "/password-reset/:token", AuthController, :reset_password
     get "/confirm_new_user/:token", AuthController, :confirm
     post "/confirm_new_user/:token", AuthController, :confirm_user
-    get "/sign-out", AuthController, :sign_out
+    delete "/sign-out", AuthController, :sign_out
 
     # The callback URLs of the OAuth applications on GitHub and GitLab.
     get "/auth/user/:provider", OAuthController, :authorize

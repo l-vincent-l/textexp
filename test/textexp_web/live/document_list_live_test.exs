@@ -11,7 +11,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
   # longer than the default 100 ms of render_async/1 on a busy machine.
   @search_timeout 2_000
 
-  defp register_user, do: Fixtures.register_user()
+  defp register_user, do: Fixtures.confirmed_user()
 
   defp log_in(conn, user), do: Fixtures.log_in(conn, user)
 

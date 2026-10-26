@@ -228,6 +228,8 @@ defmodule Textexp.Document do
     case Accounts.get_user_by_email(email) do
       nil -> error(changeset, "aucun compte avec cette adresse")
       %{id: id} when id == owner.id -> error(changeset, "c'est l'adresse du propriétaire")
+      # Whoever registered an unconfirmed account may not own its address.
+      %{confirmed_at: nil} -> error(changeset, "ce compte n'a pas encore confirmé son adresse")
       user -> {:ok, user}
     end
   end

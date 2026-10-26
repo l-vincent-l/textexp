@@ -61,12 +61,14 @@ defmodule TextexpWeb.Layouts do
               <span class="px-3 py-2 text-sm font-medium rounded-md">
                 {@current_user.email}
               </span>
-              <a
-                href="/sign-out"
+              <.link
+                href={~p"/sign-out"}
+                method="delete"
+                id="sign-out"
                 class="rounded-lg bg-zinc-100 px-2 py-1 text-[0.8125rem] font-semibold leading-6 text-zinc-900 hover:bg-zinc-200/80 active:text-zinc-900/70"
               >
                 Sign out
-              </a>
+              </.link>
             <% else %>
               <a
                 href="/sign-in"

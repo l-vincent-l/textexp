@@ -37,8 +37,28 @@ defmodule TextexpWeb.AuthControllerTest do
       assert %{email: "new@example.com", confirmed_at: nil} = signed_in_user(conn)
 
       token = link_token("/confirm_new_user")
+      user = signed_in_user(conn)
+      conn = build_conn() |> Fixtures.log_in(user) |> post(~p"/confirm_new_user/#{token}")
+      assert redirected_to(conn) == ~p"/documents"
+      assert Accounts.get_user_by_email(user.email).confirmed_at
+    end
+
+    # The owner of the address may not be whoever chose the password.
+    test "the confirmation link is only used signed in to the account", %{conn: conn} do
+      user = Fixtures.register_user()
+      token = link_token("/confirm_new_user")
+
+      conn = get(conn, ~p"/confirm_new_user/#{token}")
+      assert redirected_to(conn) == ~p"/sign-in"
+      assert get_session(conn, :return_to) == ~p"/confirm_new_user/#{token}"
+
       conn = post(build_conn(), ~p"/confirm_new_user/#{token}")
-      assert signed_in_user(conn).confirmed_at
+      refute get_session(conn, :user_token)
+
+      other = build_conn() |> Fixtures.log_in(Fixtures.register_user())
+      post(other, ~p"/confirm_new_user/#{token}")
+
+      refute Accounts.get_user_by_email(user.email).confirmed_at
     end
 
     test "refuses a short password, or a taken address", %{conn: conn} do
@@ -106,6 +126,10 @@ defmodule TextexpWeb.AuthControllerTest do
       token = link_token("/password-reset")
       assert html_response(get(build_conn(), ~p"/password-reset/#{token}"), 200)
 
+      # The document sockets of the sessions signed out are closed.
+      _session = build_conn() |> Fixtures.log_in(user)
+      TextexpWeb.Endpoint.subscribe("user_socket:#{user.id}")
+
       conn =
         post(build_conn(), ~p"/password-reset/#{token}", %{
           "user" => %{"password" => "a-new-password", "password_confirmation" => "a-new-password"}
@@ -114,6 +138,7 @@ defmodule TextexpWeb.AuthControllerTest do
       assert signed_in_user(conn).confirmed_at
       assert Accounts.get_user_by_email_and_password(user.email, "a-new-password")
       refute Accounts.get_user_by_email_and_password(user.email, Fixtures.password())
+      assert_receive %Phoenix.Socket.Broadcast{event: "disconnect"}
     end
   end
 
@@ -151,7 +176,7 @@ defmodule TextexpWeb.AuthControllerTest do
 
   test "signing out deletes the session token", %{conn: conn} do
     user = Fixtures.register_user()
-    conn = conn |> Fixtures.log_in(user) |> get(~p"/sign-out")
+    conn = conn |> Fixtures.log_in(user) |> delete(~p"/sign-out")
 
     assert redirected_to(conn) == ~p"/"
     refute get_session(conn, :user_token)
