@@ -5,6 +5,10 @@ defmodule TextexpWeb.DocumentListLiveTest do
 
   alias Textexp.Document
 
+  # The first search builds the search index in the background, which can take
+  # longer than the default 100 ms of render_async/1 on a busy machine.
+  @search_timeout 2_000
+
   defp register_user do
     Textexp.Accounts.User
     |> Ash.Changeset.for_create(:register_with_password, %{
@@ -120,7 +124,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
 
       view |> element("#search-form") |> render_change(%{"query" => "chats"})
       # waits for the index, built for the first search
-      render_async(view)
+      render_async(view, @search_timeout)
 
       assert has_element?(view, "#documents-#{cats.id}")
       refute has_element?(view, "#documents-#{dogs.id}")
@@ -156,7 +160,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/documents")
       view |> element("#search-form") |> render_change(%{"query" => "chat"})
-      render_async(view)
+      render_async(view, @search_timeout)
 
       assert has_element?(view, "#documents-#{document.id} p mark", "chat")
     end
@@ -181,7 +185,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
       {:ok, view, _html} = live(conn, ~p"/documents")
 
       view |> element("#search-form") |> render_change(%{"query" => "chats"})
-      render_async(view)
+      render_async(view, @search_timeout)
 
       assert has_element?(view, "#documents-#{own.id}")
       refute has_element?(view, "#documents-#{hidden.id}")
@@ -192,7 +196,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
       {:ok, view, _html} = live(conn, ~p"/documents")
 
       view |> element("#search-form") |> render_change(%{"query" => "chats AND ("})
-      render_async(view)
+      render_async(view, @search_timeout)
 
       refute has_element?(view, "#documents-#{document.id}")
       assert has_element?(view, "#documents-empty", "Aucun résultat")
