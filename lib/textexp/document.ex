@@ -1,18 +1,22 @@
 defmodule Textexp.Document do
   @moduledoc """
   The documents and who may access them: their owner can do anything, editors
-  (see `Textexp.Document.Membership`) read and write, viewers only read.
+  (see `Textexp.Document.Membership`) read and write, viewers only read (see
+  `Textexp.Document.Policy`).
 
-  Functions taking a `user` only see and change what that user may. The
-  others, without user, are for the server itself: e.g. YPersistence saves the
-  documents being edited, access being checked when joining the document's
-  channel (see `TextexpWeb.YDocRoomChannel`).
+  Functions taking a `user` only see and change what that user may: listings
+  are filtered in their query, an action reads the user's role, then checks it
+  with `Policy`. The others, without user, are for the server itself: e.g.
+  YPersistence saves the documents being edited, whose DocServer checks the
+  rights of the clients (see `Textexp.Document.Access`).
+
+  A change of a member's role is broadcast on `members_topic/1`.
   """
   import Ecto.Query
 
   alias Ecto.Changeset
   alias Textexp.Accounts
-  alias Textexp.Document.{Body, Document, Membership}
+  alias Textexp.Document.{Body, Document, Membership, Policy}
   alias Textexp.SqliteRepo, as: Repo
 
   # Largest Yjs state an import accepts.
@@ -77,6 +81,66 @@ defmodule Textexp.Document do
   defp role(%Document{owner_id: owner_id}, %{id: owner_id}, _membership_role), do: :owner
   defp role(_document, _user, membership_role), do: membership_role
 
+  @doc """
+  The rights on the document of `id`: `%{owner_id, members}`, `members` giving
+  the role of each member's id. Without owner for an unknown document.
+  """
+  def access_rights(id) do
+    rows =
+      case Ecto.UUID.cast(id) do
+        {:ok, id} ->
+          Repo.all(
+            from d in Document,
+              left_join: m in Membership,
+              on: m.document_id == d.id,
+              where: d.id == ^id,
+              select: {d.owner_id, m.user_id, m.role}
+          )
+
+        :error ->
+          []
+      end
+
+    owner_id =
+      case rows do
+        [{owner_id, _user_id, _role} | _] -> owner_id
+        [] -> nil
+      end
+
+    %{
+      owner_id: owner_id,
+      members: for({_, user_id, role} <- rows, user_id, into: %{}, do: {user_id, role})
+    }
+  end
+
+  @doc """
+  PubSub topic on which `{:member_changed, document_id, user_id, role}` is
+  broadcast when a member is added (`role`), changed, or removed (`nil`).
+  """
+  def members_topic(document_id), do: "document_members:#{document_id}"
+
+  defp broadcast_member_changed(document_id, user_id, role) do
+    Phoenix.PubSub.broadcast(
+      Textexp.PubSub,
+      members_topic(document_id),
+      {:member_changed, document_id, user_id, role}
+    )
+  end
+
+  # Runs `fun` if `user` may do `action` on the document of `id`, in the same
+  # transaction as the reading of their role.
+  defp authorized(id, user, action, fun) do
+    Repo.transact(fn ->
+      case get_document(id, user) do
+        {:ok, document} ->
+          if Policy.can?(document.role, action), do: fun.(document), else: {:error, :forbidden}
+
+        {:error, _} ->
+          {:error, :forbidden}
+      end
+    end)
+  end
+
   @doc "The document of `id`, with its snapshot."
   def get_document!(id), do: Repo.get!(Document, id)
 
@@ -135,20 +199,15 @@ defmodule Textexp.Document do
 
   @doc "Renames a document that `user` can write: owner or editor."
   def rename_document(%Document{id: id}, user, title) do
-    editable =
-      from d in Document,
-        where: d.id == ^id,
-        where:
-          d.owner_id == ^user.id or
-            exists(
-              from m in Membership,
-                where: m.document_id == ^id and m.user_id == ^user.id and m.role == :editor
-            )
+    authorized(id, user, :write, fn document ->
+      now = DateTime.utc_now()
 
-    case Repo.update_all(editable, set: [title: title, updated_at: DateTime.utc_now()]) do
-      {1, _} -> get_document(id, user)
-      {0, _} -> {:error, :forbidden}
-    end
+      Repo.update_all(from(d in Document, where: d.id == ^id),
+        set: [title: title, updated_at: now]
+      )
+
+      {:ok, %{document | title: title, updated_at: now}}
+    end)
   end
 
   @doc """
@@ -198,9 +257,6 @@ defmodule Textexp.Document do
 
   ## Members
 
-  defp owned_by(document_id, user),
-    do: Repo.exists?(from d in Document, where: d.id == ^document_id and d.owner_id == ^user.id)
-
   def change_share(attrs \\ %{}), do: Membership.share_changeset(%Membership{}, attrs)
 
   @doc """
@@ -212,15 +268,20 @@ defmodule Textexp.Document do
     changeset = change_share(attrs)
 
     with {:ok, %{email: email, role: role}} <- Changeset.apply_action(changeset, :insert),
-         true <- owned_by(document_id, owner) || {:error, :forbidden},
-         {:ok, user} <- member_user(changeset, email, owner) do
-      %Membership{document_id: document_id, user_id: user.id, role: role}
-      |> Repo.insert!(
-        on_conflict: [set: [role: role]],
-        conflict_target: [:document_id, :user_id]
-      )
+         {:ok, member} <-
+           authorized(document_id, owner, :share, fn document ->
+             with {:ok, user} <- member_user(changeset, email, owner) do
+               %Membership{document_id: document.id, user_id: user.id, role: role}
+               |> Repo.insert!(
+                 on_conflict: [set: [role: role]],
+                 conflict_target: [:document_id, :user_id]
+               )
 
-      {:ok, Enum.find(list_members(owner, document_id), &(&1.user_id == user.id))}
+               {:ok, Enum.find(members(document.id), &(&1.user_id == user.id))}
+             end
+           end) do
+      broadcast_member_changed(document_id, member.user_id, member.role)
+      {:ok, member}
     end
   end
 
@@ -237,13 +298,22 @@ defmodule Textexp.Document do
   defp error(changeset, message),
     do: {:error, %{Changeset.add_error(changeset, :email, message) | action: :insert}}
 
-  @doc "The members of a document that `owner` owns: `%{id, user_id, email, role}`."
+  @doc """
+  The members of a document that `owner` owns: `%{id, user_id, email, role}`;
+  none for another user.
+  """
   def list_members(owner, document_id) do
+    case authorized(document_id, owner, :share, &{:ok, members(&1.id)}) do
+      {:ok, members} -> members
+      {:error, _} -> []
+    end
+  end
+
+  defp members(document_id) do
     Repo.all(
       from m in Membership,
-        join: d in assoc(m, :document),
         join: u in assoc(m, :user),
-        where: m.document_id == ^document_id and d.owner_id == ^owner.id,
+        where: m.document_id == ^document_id,
         order_by: u.email,
         select: %{id: m.id, user_id: u.id, email: u.email, role: m.role}
     )
@@ -251,14 +321,16 @@ defmodule Textexp.Document do
 
   @doc "Removes a member of a document that `owner` owns."
   def remove_member(owner, membership_id) do
-    owned = from d in Document, where: d.owner_id == ^owner.id, select: d.id
-
-    case Repo.delete_all(
-           from m in Membership,
-             where: m.id == ^membership_id and m.document_id in subquery(owned)
-         ) do
-      {1, _} -> :ok
-      {0, _} -> {:error, :not_found}
+    with {:ok, membership_id} <- Ecto.UUID.cast(membership_id),
+         %Membership{} = membership <- Repo.get(Membership, membership_id),
+         {:ok, _} <-
+           authorized(membership.document_id, owner, :share, fn _document ->
+             {:ok, Repo.delete!(membership)}
+           end) do
+      broadcast_member_changed(membership.document_id, membership.user_id, nil)
+      :ok
+    else
+      _ -> {:error, :not_found}
     end
   end
 end

@@ -9,6 +9,7 @@ defmodule YPhoenix.DocServer do
     * `:doc_name` - document identifier, passed to the persistence;
     * `:endpoint` - Phoenix endpoint used to broadcast;
     * `:persistence` - module implementing `YPhoenix.Persistence`;
+    * `:access` - module implementing `YPhoenix.Access`;
     * `:presence` - module implementing `YPhoenix.Presence`;
     * `:flush_interval_ms` - interval between two saves (default 10 s);
     * `:shutdown_delay_ms` - delay before stopping once the last client has
@@ -26,13 +27,31 @@ defmodule YPhoenix.DocServer do
   @awareness_throttle_ms 50
   @flush_interval_ms :timer.seconds(10)
 
+  @doc """
+  Joins the document as `actor`, for the calling process (a channel):
+  `{:ok, :write | :read}` or `{:error, :unauthorized}`. The process then
+  receives `{YPhoenix.DocServer, :permission, permission}` when its
+  permission changes.
+  """
+  def join(server, actor), do: GenServer.call(server, {:join, actor})
+
   @impl true
-  def init(option, %{doc: doc} = state) do
+  def init(option, state) do
+    doc_name = Keyword.fetch!(option, :doc_name)
+
+    case Keyword.fetch!(option, :access).init(doc_name) do
+      {:ok, access_state} -> init(option, state, access_state)
+      :not_found -> {:stop, :not_found}
+    end
+  end
+
+  defp init(option, %{doc: doc} = state, access_state) do
     topic = Keyword.fetch!(option, :topic)
     doc_name = Keyword.fetch!(option, :doc_name)
     endpoint = Keyword.fetch!(option, :endpoint)
     persistence = Keyword.fetch!(option, :persistence)
     presence = Keyword.fetch!(option, :presence)
+    access = Keyword.fetch!(option, :access)
     Logger.info("DocServer for #{doc_name} initialized.")
 
     # So that `terminate/2` (and thus the flush) runs when the supervisor stops
@@ -48,6 +67,13 @@ defmodule YPhoenix.DocServer do
 
     user_count = presence.list_users(topic) |> length()
 
+    shutdown_delay_ms = Keyword.get(option, :shutdown_delay_ms, @shutdown_delay_ms)
+
+    # Clients are tracked once authorized (see YPhoenix.Channel): started for
+    # a client then refused, the DocServer stops as if they had left.
+    shutdown_timer_ref =
+      if user_count <= 0, do: Process.send_after(self(), :delayed_shutdown, shutdown_delay_ms)
+
     {:ok,
      state
      |> assign(%{
@@ -56,12 +82,16 @@ defmodule YPhoenix.DocServer do
        endpoint: endpoint,
        persistence: persistence,
        presence: presence,
+       access: access,
+       access_state: access_state,
+       # channel pid => %{actor, permission, monitor_ref}
+       clients: %{},
        origin_clients_map: %{},
        user_count: user_count,
        persistance_state: persistance_state,
        flush_interval_ms: flush_interval_ms,
-       shutdown_delay_ms: Keyword.get(option, :shutdown_delay_ms, @shutdown_delay_ms),
-       shutdown_timer_ref: nil,
+       shutdown_delay_ms: shutdown_delay_ms,
+       shutdown_timer_ref: shutdown_timer_ref,
        awareness_throttle_ms: Keyword.get(option, :awareness_throttle_ms, @awareness_throttle_ms),
        awareness_window_open: false,
        awareness_pending_clients: MapSet.new(),
@@ -190,7 +220,29 @@ defmodule YPhoenix.DocServer do
     assign(state, %{origin_clients_map: origin_clients_map})
   end
 
+  @impl true
+  def handle_call({:join, actor}, {pid, _tag}, state) do
+    case state.assigns.access.permission(state.assigns.access_state, actor) do
+      :none ->
+        {:reply, {:error, :unauthorized}, state}
+
+      permission ->
+        ref =
+          case state.assigns.clients do
+            %{^pid => %{monitor_ref: ref}} -> ref
+            _ -> Process.monitor(pid)
+          end
+
+        client = %{actor: actor, permission: permission, monitor_ref: ref}
+
+        {:reply, {:ok, permission},
+         assign(state, :clients, Map.put(state.assigns.clients, pid, client))}
+    end
+  end
+
+  @impl true
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
+    state = assign(state, :clients, Map.delete(state.assigns.clients, pid))
     origin_clients_map = state.assigns[:origin_clients_map] || %{}
 
     case Map.get(origin_clients_map, pid) do
@@ -204,7 +256,6 @@ defmodule YPhoenix.DocServer do
     end
   end
 
-  @impl true
   def handle_info({presence, {:join, _presence}}, %{assigns: %{presence: presence}} = state) do
     state = assign(state, :user_count, state.assigns.user_count + 1)
     # Cancel shutdown timer if a user joins
@@ -287,6 +338,37 @@ defmodule YPhoenix.DocServer do
       {:stop, :shutdown, state}
     else
       {:noreply, assign(state, :shutdown_timer_ref, nil)}
+    end
+  end
+
+  def handle_info(msg, state) do
+    case state.assigns.access.handle_info(msg, state.assigns.access_state) do
+      {:ok, access_state} ->
+        state = assign(state, :access_state, access_state)
+        {:noreply, assign(state, :clients, update_permissions(state))}
+
+      :ignore ->
+        {:noreply, state}
+    end
+  end
+
+  # Tells the clients whose permission changed; those who lost access are
+  # forgotten, their channel leaving.
+  defp update_permissions(state) do
+    for {pid, client} <- state.assigns.clients,
+        permission = state.assigns.access.permission(state.assigns.access_state, client.actor),
+        reduce: %{} do
+      clients ->
+        if permission != client.permission do
+          send(pid, {__MODULE__, :permission, permission})
+        end
+
+        if permission == :none do
+          Process.demonitor(client.monitor_ref, [:flush])
+          clients
+        else
+          Map.put(clients, pid, %{client | permission: permission})
+        end
     end
   end
 

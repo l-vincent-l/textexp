@@ -21,8 +21,8 @@ defmodule Textexp.Document.YPersistence do
   which the DocServer ignores.
 
   Its operations are done without user: the DocServer is shared by all the
-  document's clients and saves on its own (timer, shutdown). Access is checked
-  when joining the document's channel (see `TextexpWeb.YDocRoomChannel`).
+  document's clients and saves on its own (timer, shutdown). It checks the
+  rights of the clients joining it (see `Textexp.Document.Access`).
   """
   @behaviour YPhoenix.Persistence
 

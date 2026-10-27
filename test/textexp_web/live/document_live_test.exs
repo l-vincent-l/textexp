@@ -244,6 +244,26 @@ defmodule TextexpWeb.DocumentLiveTest do
       assert {:error, _} = Document.get_document(document.id, viewer)
     end
 
+    test "a member removed is sent back to the list", %{owner: owner, document: document} do
+      viewer = register_user()
+      membership = Fixtures.share!(owner, document, viewer, :viewer)
+      {:ok, view, _html} = live(log_in(build_conn(), viewer), ~p"/documents/#{document.id}")
+
+      :ok = Document.remove_member(owner, membership.id)
+
+      assert_redirect(view, ~p"/documents")
+    end
+
+    test "a member whose role changes gets the page again", %{owner: owner, document: document} do
+      member = register_user()
+      Fixtures.share!(owner, document, member, :viewer)
+      {:ok, view, _html} = live(log_in(build_conn(), member), ~p"/documents/#{document.id}")
+
+      Fixtures.share!(owner, document, member, :editor)
+
+      assert_redirect(view, ~p"/documents/#{document.id}")
+    end
+
     test "members do not see the share button", %{owner: owner, document: document} do
       editor = register_user()
       Fixtures.share!(owner, document, editor, :editor)

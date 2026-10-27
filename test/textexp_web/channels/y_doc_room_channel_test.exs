@@ -106,4 +106,48 @@ defmodule TextexpWeb.YDocRoomChannelTest do
 
     assert saved_text(socket, document) == nil
   end
+
+  # The DocServer has handled the change broadcast, and the channel the
+  # permission it was then sent.
+  defp sync(socket) do
+    _ = :sys.get_state(socket.assigns.doc_pid)
+    _ = :sys.get_state(socket.channel_pid)
+  end
+
+  test "an editor made viewer goes read-only at once", %{owner: owner, document: document} do
+    member = register_user()
+    Fixtures.share!(owner, document, member, :editor)
+    {:ok, _reply, socket} = join_as(member, document.id)
+
+    Fixtures.share!(owner, document, member, :viewer)
+    sync(socket)
+    push_edit(socket, "hello")
+
+    assert saved_text(socket, document) == nil
+  end
+
+  test "a member removed leaves the channel at once", %{owner: owner, document: document} do
+    member = register_user()
+    membership = Fixtures.share!(owner, document, member, :editor)
+    {:ok, _reply, socket} = join_as(member, document.id)
+    Process.unlink(socket.channel_pid)
+    ref = Process.monitor(socket.channel_pid)
+
+    :ok = Document.remove_member(owner, membership.id)
+
+    assert_receive {:DOWN, ^ref, :process, _pid, {:shutdown, :unauthorized}}
+  end
+
+  test "another member's change leaves the channel as it was",
+       %{owner: owner, document: document} do
+    editor = register_user()
+    Fixtures.share!(owner, document, editor, :editor)
+    {:ok, _reply, socket} = join_as(editor, document.id)
+
+    Fixtures.share!(owner, document, register_user(), :viewer)
+    sync(socket)
+    push_edit(socket, "hello")
+
+    assert saved_text(socket, document) == "hello"
+  end
 end

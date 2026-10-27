@@ -3,7 +3,7 @@ defmodule TextexpWeb.DocumentLive do
 
   alias Textexp.Accounts
   alias Textexp.Document
-  alias Textexp.Document.YPersistence
+  alias Textexp.Document.{Policy, YPersistence}
   alias TextexpWeb.Presence
 
   on_mount {TextexpWeb.LiveUserAuth, :live_user_required}
@@ -298,6 +298,7 @@ defmodule TextexpWeb.DocumentLive do
   defp open_document(socket, document) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.topic(document.id))
+      Phoenix.PubSub.subscribe(Textexp.PubSub, Document.members_topic(document.id))
 
       user = socket.assigns.current_user
       Presence.subscribe(viewers_topic(document.id))
@@ -307,10 +308,8 @@ defmodule TextexpWeb.DocumentLive do
     socket
     |> assign(
       document: document,
-      # Viewers read the document without editing it (see YDocRoomChannel).
-      can_edit?: document.role != :viewer,
-      # Only the owner shares the document (see Membership).
-      can_share?: document.role == :owner,
+      can_edit?: Policy.can?(document.role, :write),
+      can_share?: Policy.can?(document.role, :share),
       sharing?: false,
       page_title: document.title || "Sans titre",
       last_update: document.updated_at,
@@ -326,6 +325,7 @@ defmodule TextexpWeb.DocumentLive do
 
     if connected?(socket) do
       Phoenix.PubSub.unsubscribe(Textexp.PubSub, YPersistence.topic(document_id))
+      Phoenix.PubSub.unsubscribe(Textexp.PubSub, Document.members_topic(document_id))
       Presence.unsubscribe(viewers_topic(document_id))
       Presence.untrack_user(viewers_topic(document_id), socket.assigns.current_user.id)
     end
@@ -361,6 +361,30 @@ defmodule TextexpWeb.DocumentLive do
       {:noreply, push_navigate(socket, to: ~p"/documents")}
     else
       {:noreply, socket}
+    end
+  end
+
+  # The user's role on the open document changed: the page is opened again
+  # with it, the editor along (its channel already applies it, see
+  # YDocRoomChannel). Without access, back to the list.
+  def handle_info({:member_changed, document_id, user_id, role}, socket) do
+    %{document: document, current_user: user} = socket.assigns
+
+    cond do
+      document.id != document_id or user.id != user_id ->
+        {:noreply, socket}
+
+      is_nil(role) ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Votre accès à ce document a été retiré")
+         |> push_navigate(to: ~p"/documents")}
+
+      true ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Vos droits sur ce document ont changé")
+         |> push_navigate(to: ~p"/documents/#{document.id}")}
     end
   end
 
