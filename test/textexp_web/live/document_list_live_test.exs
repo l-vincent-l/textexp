@@ -170,6 +170,14 @@ defmodule TextexpWeb.DocumentListLiveTest do
       refute has_element?(view, "#documents-#{hidden.id}")
     end
 
+    test "?search focuses the search field", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/documents?search")
+      assert has_element?(view, "#search-query[autofocus]")
+
+      {:ok, view, _html} = live(conn, ~p"/documents")
+      refute has_element?(view, "#search-query[autofocus]")
+    end
+
     test "a search without match shows that nothing was found", %{conn: conn, user: user} do
       document = Fixtures.create_document!(user, %{title: "Les chats"})
       {:ok, view, _html} = live(conn, ~p"/documents")

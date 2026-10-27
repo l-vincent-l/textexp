@@ -24,6 +24,7 @@ defmodule TextexpWeb.DocumentLiveTest do
       editor = "#document-editor-#{document.id}[phx-hook='DocumentEditor']"
       assert has_element?(view, "#{editor}[data-document-id='#{document.id}']")
       assert has_element?(view, "#documents-link[href='/documents']")
+      assert has_element?(view, "#search-link[href='/documents?search']")
       assert has_element?(view, "#{editor} [data-skeleton]")
       assert has_element?(view, "#{editor} [data-editor][hidden]")
 
@@ -242,6 +243,20 @@ defmodule TextexpWeb.DocumentLiveTest do
 
       refute has_element?(view, "#members-#{membership.id}")
       assert {:error, _} = Document.get_document(document.id, viewer)
+    end
+
+    test "the share modal closes with its button and Escape", %{conn: conn, document: document} do
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      view |> element("#share-button") |> render_click()
+      assert has_element?(view, "#share-modal[class~=modal-open] #share-panel[role=dialog]")
+
+      view |> element("#share-close") |> render_click()
+      refute has_element?(view, "#share-modal")
+
+      view |> element("#share-button") |> render_click()
+      view |> element("#share-modal") |> render_keydown(%{"key" => "Escape"})
+      refute has_element?(view, "#share-modal")
     end
 
     test "the owner switches a member between viewer and editor",

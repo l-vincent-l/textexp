@@ -32,6 +32,7 @@ defmodule TextexpWeb.DocumentListLive do
               value={@search_form[:query].value}
               placeholder="Rechercher dans les documents"
               autocomplete="off"
+              autofocus={@focus_search?}
               phx-debounce="300"
               class="grow bg-transparent text-sm outline-none placeholder:text-base-content/50"
             />
@@ -105,7 +106,8 @@ defmodule TextexpWeb.DocumentListLive do
     """
   end
 
-  def mount(_params, _session, socket) do
+  # `?search` (the search button of a document's menu) focuses the search field.
+  def mount(params, _session, socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.documents_topic())
     end
@@ -116,6 +118,7 @@ defmodule TextexpWeb.DocumentListLive do
        page_title: "Documents",
        search_form: to_form(%{"query" => ""}),
        searching?: false,
+       focus_search?: Map.has_key?(params, "search"),
        index: nil
      )
      |> stream(:documents, list_documents(socket.assigns.current_user))}

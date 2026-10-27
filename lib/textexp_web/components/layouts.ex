@@ -37,19 +37,21 @@ defmodule TextexpWeb.Layouts do
     default: false,
     doc: "when true, the content spans the whole page instead of a centered column"
 
+  attr :sidebar, :boolean,
+    default: false,
+    doc:
+      "when true, the page has no header: its sidebar holds the logo (`logo/1`) and the account controls (`account/1`)"
+
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header class="navbar min-h-14 border-b-2 border-base-content px-4 sm:px-6 lg:px-8">
+    <header
+      :if={!@sidebar}
+      class="navbar h-14 min-h-14 border-b-2 border-base-content px-4 sm:px-6 lg:px-8"
+    >
       <div class="flex-1">
-        <.link
-          id="documents-link"
-          navigate={~p"/documents"}
-          class="font-pixel text-base uppercase tracking-wide no-underline hover:underline hover:decoration-dotted"
-        >
-          textexp
-        </.link>
+        <.logo />
       </div>
       <div class="flex-none">
         <ul class="flex items-center gap-4 text-sm">
@@ -57,16 +59,7 @@ defmodule TextexpWeb.Layouts do
             {@current_user.email}
           </li>
           <li>
-            <.link
-              :if={@current_user}
-              href={~p"/sign-out"}
-              method="delete"
-              id="sign-out"
-              class="link"
-            >
-              Sign out
-            </.link>
-            <.link :if={!@current_user} href={~p"/sign-in"} class="link">Sign in</.link>
+            <.sign_out_link current_user={@current_user} />
           </li>
           <li>
             <.theme_toggle />
@@ -86,6 +79,53 @@ defmodule TextexpWeb.Layouts do
     </main>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  @doc "The site's name, linking to the documents."
+  attr :class, :any, default: nil
+
+  def logo(assigns) do
+    ~H"""
+    <.link
+      id="documents-link"
+      navigate={~p"/documents"}
+      class={[
+        "font-pixel text-base uppercase tracking-wide no-underline hover:underline hover:decoration-dotted",
+        @class
+      ]}
+    >
+      textexp
+    </.link>
+    """
+  end
+
+  @doc """
+  The account controls at the bottom of a page's sidebar: the user's email,
+  signing out, the theme. See the `sidebar` attribute of `app/1`.
+  """
+  attr :current_user, :map, required: true
+
+  def account(assigns) do
+    ~H"""
+    <div id="account" class="mt-auto border-t-2 border-dotted border-base-content/40 pt-4 text-sm">
+      <p class="truncate" title={@current_user.email}>{@current_user.email}</p>
+      <div class="mt-2 flex items-center justify-between gap-2">
+        <.sign_out_link current_user={@current_user} />
+        <.theme_toggle />
+      </div>
+    </div>
+    """
+  end
+
+  attr :current_user, :map, default: nil
+
+  defp sign_out_link(assigns) do
+    ~H"""
+    <.link :if={@current_user} href={~p"/sign-out"} method="delete" id="sign-out" class="link">
+      Sign out
+    </.link>
+    <.link :if={!@current_user} href={~p"/sign-in"} class="link">Sign in</.link>
     """
   end
 

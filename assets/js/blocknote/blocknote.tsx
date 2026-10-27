@@ -17,7 +17,7 @@ import { createRoot } from "react-dom/client";
 import { PhoenixChannelProvider } from "y-phoenix-channel";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Socket } from "phoenix";
-import { User } from "@blocknote/core";
+import { BlockNoteEditor, User } from "@blocknote/core";
 
 const usercolors = [
   "#30bced",
@@ -55,6 +55,7 @@ type EditorProps = {
   editable: boolean;
   threadStore: ThreadStore;
   resolveUsers: ResolveUsers;
+  onReady: (editor: BlockNoteEditor<any, any, any>) => void;
 };
 
 function Editor({
@@ -64,6 +65,7 @@ function Editor({
   editable,
   threadStore,
   resolveUsers,
+  onReady,
 }: EditorProps) {
   const editor = useCreateBlockNote(
     withCollaboration({
@@ -76,6 +78,7 @@ function Editor({
       extensions: [CommentsExtension({ threadStore, resolveUsers })],
     }),
   );
+  React.useEffect(() => onReady(editor), [editor]);
 
   return <BlockNoteView editor={editor} editable={editable} theme="light" />;
 }
@@ -131,19 +134,41 @@ export function mountEditor(
     if (fragment.length > 0) showEditor();
   });
 
+  // A click in the empty space under the document (the rest of `el`) edits it,
+  // as if at its end: in its last block, or in a new paragraph after it when
+  // that block has no text (e.g. an image).
+  const editable = el.dataset.editable !== "false";
+  let editor: BlockNoteEditor<any, any, any> | null = null;
+  const editAtEnd = (event: MouseEvent) => {
+    if (!editor || !editable || editorNode.hidden) return;
+    if (event.target !== el && event.target !== editorNode) return;
+    event.preventDefault();
+    const last = editor.document[editor.document.length - 1];
+    if (Array.isArray(last.content)) {
+      editor.setTextCursorPosition(last, "end");
+    } else {
+      const [paragraph] = editor.insertBlocks([{ type: "paragraph" }], last, "after");
+      editor.setTextCursorPosition(paragraph, "end");
+    }
+    editor.focus();
+  };
+  el.addEventListener("mousedown", editAtEnd);
+
   const root = createRoot(editorNode);
   root.render(
     <Editor
       provider={provider}
       fragment={fragment}
       userName={el.dataset.userName ?? ""}
-      editable={el.dataset.editable !== "false"}
+      editable={editable}
       threadStore={threadStore}
       resolveUsers={resolveUsers}
+      onReady={(e) => (editor = e)}
     />,
   );
 
   return () => {
+    el.removeEventListener("mousedown", editAtEnd);
     root.unmount();
     // leaves the document's channel, which stops tracking us as a viewer
     provider.destroy();

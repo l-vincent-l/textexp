@@ -10,27 +10,48 @@ defmodule TextexpWeb.DocumentLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_user={@current_user} full_width>
+    <Layouts.app flash={@flash} current_user={@current_user} full_width sidebar>
       <link phx-track-static rel="stylesheet" href={~p"/assets/js/blocknote.css"} />
-      <div class="drawer lg:drawer-open min-h-[calc(100vh-4rem)]">
+      <div class="drawer lg:drawer-open min-h-dvh">
         <input id="sidebar-drawer" type="checkbox" class="drawer-toggle" />
 
         <div class="drawer-content flex flex-col">
-          <%!-- Open button: only visible on small screens --%>
-          <div class="p-2 lg:hidden">
+          <%!-- The menu's open button (small screens only), and sharing on the right,
+               above the title --%>
+          <div class={[
+            "flex min-h-12 items-center justify-between px-2 pt-2 lg:px-[54px] lg:pt-4",
+            !@can_share? && "lg:hidden"
+          ]}>
             <label
               id="sidebar-open"
               for="sidebar-drawer"
               aria-label="Ouvrir le menu"
-              class="btn btn-square btn-ghost drawer-button"
+              class="btn btn-square btn-ghost drawer-button lg:hidden"
             >
               <.icon name="hero-bars-3" class="size-5" />
             </label>
+            <button
+              :if={@can_share?}
+              id="share-button"
+              type="button"
+              phx-click="toggle_share"
+              aria-expanded={to_string(@sharing?)}
+              aria-controls="share-panel"
+              class={[
+                "btn btn-sm ml-auto border-base-content px-4",
+                if(@sharing?,
+                  do: "btn-primary",
+                  else: "bg-base-100 hover:bg-primary hover:text-primary-content"
+                )
+              ]}
+            >
+              <.icon name="hero-user-plus" class="size-4" /> Partager
+            </button>
           </div>
 
           <%!-- The title shares the margins of the BlockNote editor, which takes the theme's colors and font (see blocknote.css) --%>
           <div class="flex flex-1 flex-col">
-            <div class="document-header px-[54px] pt-12 pb-2">
+            <div class="document-header px-[54px] pt-1">
               <.form
                 for={@title_form}
                 id="title-form"
@@ -52,50 +73,31 @@ defmodule TextexpWeb.DocumentLive do
                 <p id="last-update" class="text-xs text-base-content/60">
                   Dernière mise à jour : {Calendar.strftime(@last_update, "%d/%m/%Y %H:%M:%S")} UTC
                 </p>
-                <div class="flex items-center gap-3">
-                  <%!-- People who have this document open --%>
-                  <ul id="viewers" class="flex -space-x-2" phx-update="stream">
-                    <li
-                      :for={{id, viewer} <- @streams.viewers}
-                      id={id}
-                      title={viewer.email}
-                      class={[
-                        "flex size-8 items-center justify-center border-2 border-base-content text-xs font-medium uppercase",
-                        "transition-transform duration-150 hover:z-10 hover:-translate-y-0.5",
-                        if(viewer.id == @current_user.id,
-                          do: "bg-primary text-primary-content",
-                          else: "bg-base-300 text-base-content"
-                        )
-                      ]}
-                    >
-                      {String.first(to_string(viewer.email))}
-                    </li>
-                  </ul>
-                  <button
-                    :if={@can_share?}
-                    id="share-button"
-                    type="button"
-                    phx-click="toggle_share"
-                    aria-expanded={to_string(@sharing?)}
-                    aria-controls="share-panel"
+                <%!-- People who have this document open --%>
+                <ul id="viewers" class="flex -space-x-1.5" phx-update="stream">
+                  <li
+                    :for={{id, viewer} <- @streams.viewers}
+                    id={id}
+                    title={viewer.email}
                     class={[
-                      "btn btn-sm border-base-content px-4",
-                      if(@sharing?,
-                        do: "btn-primary",
-                        else: "bg-base-100 hover:bg-primary hover:text-primary-content"
+                      "flex size-6 items-center justify-center border-2 border-base-content text-[0.625rem] font-medium uppercase",
+                      "transition-transform duration-150 hover:z-10 hover:-translate-y-0.5",
+                      if(viewer.id == @current_user.id,
+                        do: "bg-primary text-primary-content",
+                        else: "bg-base-300 text-base-content"
                       )
                     ]}
                   >
-                    <.icon name="hero-user-plus" class="size-4" /> Partager
-                  </button>
-                </div>
+                    {String.first(to_string(viewer.email))}
+                  </li>
+                </ul>
               </div>
               <.share_panel
                 :if={@sharing?}
                 form={@share_form}
                 members={@streams.members}
               />
-              <hr class="mt-6 border-t-2 border-dotted border-base-content/40" />
+              <hr class="mt-3 mb-1 border-t-2 border-dotted border-base-content/40" />
             </div>
             <%!-- Managed by the DocumentEditor hook: LiveView must not touch it. Its
                    id changes with the document so that LiveView replaces it, and the
@@ -104,7 +106,7 @@ defmodule TextexpWeb.DocumentLive do
                    move the previous editor's nodes into the new element. --%>
             <div
               id={"document-editor-#{@document.id}"}
-              class="flex-1 w-full"
+              class={["flex-1 w-full pb-16", @can_edit? && "cursor-text"]}
               phx-hook="DocumentEditor"
               phx-update="ignore"
               data-document-id={@document.id}
@@ -133,6 +135,18 @@ defmodule TextexpWeb.DocumentLive do
         <div class="drawer-side z-20">
           <label for="sidebar-drawer" aria-label="Fermer le menu" class="drawer-overlay"></label>
           <div class="flex min-h-full w-64 flex-col border-r-2 border-base-content bg-base-100 p-4">
+            <div class="mb-3 flex items-center justify-between">
+              <Layouts.logo class="px-1" />
+              <.link
+                id="search-link"
+                navigate={~p"/documents?search"}
+                aria-label="Rechercher"
+                title="Rechercher"
+                class="btn btn-ghost btn-sm btn-square"
+              >
+                <.icon name="hero-magnifying-glass" class="size-5" />
+              </.link>
+            </div>
             <button
               id="new-document"
               class="btn btn-sm mb-3 justify-start border-base-content bg-base-100 hover:bg-primary hover:text-primary-content"
@@ -154,6 +168,7 @@ defmodule TextexpWeb.DocumentLive do
                 </.link>
               </li>
             </ul>
+            <Layouts.account current_user={@current_user} />
           </div>
         </div>
       </div>
@@ -164,103 +179,130 @@ defmodule TextexpWeb.DocumentLive do
   attr :form, Phoenix.HTML.Form, required: true
   attr :members, :any, required: true
 
-  # Invites an address as viewer or editor, and lists the members.
+  # A modal that invites an address as viewer or editor, and lists the members.
+  # Closed by its button, a click outside or Escape.
   defp share_panel(assigns) do
     ~H"""
-    <section
-      id="share-panel"
-      class="mt-4 border-2 border-base-content bg-base-100 p-4 shadow-hard sm:p-5"
-    >
-      <h2 class="text-sm uppercase">Partager ce document</h2>
-      <p class="mt-0.5 text-xs text-base-content/60">
-        La personne doit déjà avoir un compte.
-      </p>
-      <.form
-        for={@form}
-        id="share-form"
-        phx-submit="share"
-        class="mt-3 flex flex-wrap items-start gap-2"
+    <div id="share-modal" class="modal modal-open" phx-window-keydown="close_share" phx-key="Escape">
+      <section
+        id="share-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-title"
+        phx-mounted={JS.focus(to: "#share_email")}
+        class="modal-box w-11/12 max-w-2xl border-2 border-base-content bg-base-100 p-5 shadow-hard sm:p-6"
       >
-        <div class="min-w-56 flex-1">
-          <.input
-            field={@form[:email]}
-            type="email"
-            placeholder="adresse@exemple.fr"
-            autocomplete="off"
-            required
-          />
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="share-title" class="text-sm uppercase">Partager ce document</h2>
+            <p class="mt-0.5 text-xs text-base-content/60">
+              La personne doit déjà avoir un compte.
+            </p>
+          </div>
+          <button
+            id="share-close"
+            type="button"
+            phx-click="close_share"
+            aria-label="Fermer"
+            class="btn btn-ghost btn-sm btn-square -mt-1 -mr-2"
+          >
+            <.icon name="hero-x-mark" class="size-5" />
+          </button>
         </div>
-        <.input
-          field={@form[:role]}
-          type="select"
-          options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
-          class="select w-32"
-        />
-        <button
-          id="share-submit"
-          class="btn btn-primary"
-          phx-disable-with="Invitation…"
+        <.form
+          for={@form}
+          id="share-form"
+          phx-submit="share"
+          class="mt-3 flex flex-wrap items-start gap-2"
         >
-          Inviter
-        </button>
-      </.form>
-      <ul
-        id="members"
-        phx-update="stream"
-        class="mt-2 divide-y-2 divide-dotted divide-base-content/30"
-      >
-        <li id="members-empty" class="hidden py-2 text-sm text-base-content/60 only:block">
-          Pas encore partagé.
-        </li>
-        <li
-          :for={{id, member} <- @members}
-          id={id}
-          class="group flex items-center justify-between gap-3 py-2 text-sm"
+          <div class="min-w-56 flex-1">
+            <.input
+              field={@form[:email]}
+              type="email"
+              placeholder="adresse@exemple.fr"
+              autocomplete="off"
+              required
+            />
+          </div>
+          <.input
+            field={@form[:role]}
+            type="select"
+            options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
+            class="select w-32"
+          />
+          <button
+            id="share-submit"
+            class="btn btn-primary"
+            phx-disable-with="Invitation…"
+          >
+            Inviter
+          </button>
+        </.form>
+        <ul
+          id="members"
+          phx-update="stream"
+          class="mt-2 divide-y-2 divide-dotted divide-base-content/30"
         >
-          <span class="flex min-w-0 items-center gap-2">
-            <span class="flex size-7 shrink-0 items-center justify-center border-2 border-base-content bg-base-300 text-xs font-medium uppercase">
-              {String.first(member.email)}
+          <li id="members-empty" class="hidden py-2 text-sm text-base-content/60 only:block">
+            Pas encore partagé.
+          </li>
+          <li
+            :for={{id, member} <- @members}
+            id={id}
+            class="group flex items-center justify-between gap-3 py-2 text-sm"
+          >
+            <span class="flex min-w-0 items-center gap-2">
+              <span class="flex size-7 shrink-0 items-center justify-center border-2 border-base-content bg-base-300 text-xs font-medium uppercase">
+                {String.first(member.email)}
+              </span>
+              <span class="truncate">{member.email}</span>
             </span>
-            <span class="truncate">{member.email}</span>
-          </span>
-          <span class="flex shrink-0 items-center gap-1">
-            <.form
-              :let={f}
-              for={role_form(member)}
-              id={"role-#{member.id}"}
-              phx-change="change_role"
-              class="[&_.fieldset]:m-0 [&_.fieldset]:p-0"
-            >
-              <.input field={f[:membership_id]} type="hidden" />
-              <.input
-                field={f[:role]}
-                type="select"
-                options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
-                aria-label={"Rôle de #{member.email}"}
-                class={[
-                  "select select-xs w-24 border-base-content",
-                  if(member.role == :editor,
-                    do: "bg-primary text-primary-content",
-                    else: "bg-base-100 text-base-content"
-                  )
-                ]}
-              />
-            </.form>
-            <button
-              id={"remove-#{member.id}"}
-              type="button"
-              phx-click="remove_member"
-              phx-value-id={member.id}
-              data-confirm={"Retirer l'accès de #{member.email} ?"}
-              aria-label={"Retirer #{member.email}"}
-              class="btn btn-ghost btn-xs btn-square opacity-60 transition-opacity hover:opacity-100"
-            >
-              <.icon name="hero-x-mark" class="size-4" />
-            </button>
-          </span>
-        </li>
-      </ul>
-    </section>
+            <span class="flex shrink-0 items-center gap-1">
+              <.form
+                :let={f}
+                for={role_form(member)}
+                id={"role-#{member.id}"}
+                phx-change="change_role"
+                class="[&_.fieldset]:m-0 [&_.fieldset]:p-0"
+              >
+                <.input field={f[:membership_id]} type="hidden" />
+                <.input
+                  field={f[:role]}
+                  type="select"
+                  options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
+                  aria-label={"Rôle de #{member.email}"}
+                  class={[
+                    "select select-xs w-24 border-base-content",
+                    if(member.role == :editor,
+                      do: "bg-primary text-primary-content",
+                      else: "bg-base-100 text-base-content"
+                    )
+                  ]}
+                />
+              </.form>
+              <button
+                id={"remove-#{member.id}"}
+                type="button"
+                phx-click="remove_member"
+                phx-value-id={member.id}
+                data-confirm={"Retirer l'accès de #{member.email} ?"}
+                aria-label={"Retirer #{member.email}"}
+                class="btn btn-ghost btn-xs btn-square opacity-60 transition-opacity hover:opacity-100"
+              >
+                <.icon name="hero-x-mark" class="size-4" />
+              </button>
+            </span>
+          </li>
+        </ul>
+      </section>
+      <button
+        type="button"
+        class="modal-backdrop"
+        phx-click="close_share"
+        aria-label="Fermer"
+        tabindex="-1"
+      ></button>
+    </div>
     """
   end
 
@@ -452,6 +494,9 @@ defmodule TextexpWeb.DocumentLive do
   end
 
   def handle_event("toggle_share", _params, %{assigns: %{sharing?: true}} = socket),
+    do: {:noreply, assign(socket, sharing?: false)}
+
+  def handle_event("close_share", _params, socket),
     do: {:noreply, assign(socket, sharing?: false)}
 
   def handle_event("toggle_share", _params, socket) do
