@@ -7,8 +7,9 @@ defmodule TextexpWeb.DocumentListLiveTest do
 
   alias Textexp.Document
 
-  # The first search builds the search index in the background, which can take
-  # longer than the default 100 ms of render_async/1 on a busy machine.
+  # Searches run in the background, the first one waiting for the index to be
+  # built, which can take longer than the default 100 ms of render_async/1 on a
+  # busy machine.
   @search_timeout 2_000
 
   defp register_user, do: Fixtures.confirmed_user()
@@ -113,6 +114,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
       refute has_element?(view, "#documents-#{dogs.id}")
 
       view |> element("#search-form") |> render_change(%{"query" => "chiens"})
+      render_async(view, @search_timeout)
       assert has_element?(view, "#documents-#{dogs.id}")
       refute has_element?(view, "#documents-#{cats.id}")
 

@@ -258,11 +258,16 @@ defmodule TextexpWeb.DocumentLiveTest do
 
       view |> form("#search-modal-form", search: %{query: "tarte"}) |> render_change()
       # The index is built in the background
-      assert render_async(view) =~ "Recette de la tarte"
+      assert render_async(view, 2_000) =~ "Recette de la tarte"
       assert has_element?(view, "#search-results a[href='/documents/#{other.id}']")
+
+      # Closing it ends the process holding the index, which frees it
+      index = :sys.get_state(view.pid).socket.assigns.search_index
+      ref = Process.monitor(index)
 
       view |> element("#search-close") |> render_click()
       refute has_element?(view, "#search-panel")
+      assert_receive {:DOWN, ^ref, :process, ^index, :shutdown}
     end
 
     test "the share modal closes with its button and Escape", %{conn: conn, document: document} do

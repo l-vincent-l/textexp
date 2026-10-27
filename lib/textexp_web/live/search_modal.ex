@@ -1,8 +1,9 @@
 defmodule TextexpWeb.SearchModal do
   @moduledoc """
   A modal searching the documents the user can read, opened from a document's
-  menu. As on the list page, the index is only built for the first search, in
-  the background, and kept until the modal is closed.
+  menu, in `index`: a `Textexp.Document.SearchIndex` started by the LiveView,
+  which stops it when the modal closes, freeing the index. Each search runs in
+  a task, as it waits for the index while it is being built.
 
   Closing (its button, a click outside, Escape) sends `close_search` to the
   LiveView, which stops rendering it.
@@ -11,13 +12,17 @@ defmodule TextexpWeb.SearchModal do
 
   import TextexpWeb.DocumentComponents
 
-  alias Phoenix.LiveView.AsyncResult
-  alias Textexp.Document.Search
+  alias Textexp.Document.SearchIndex
 
   def mount(socket) do
     {:ok,
      socket
-     |> assign(form: to_form(%{"query" => ""}, as: "search"), index: nil, searched?: false)
+     |> assign(
+       form: to_form(%{"query" => ""}, as: "search"),
+       loading?: false,
+       failed?: false,
+       searched?: false
+     )
      |> stream(:results, [])}
   end
 
@@ -70,7 +75,7 @@ defmodule TextexpWeb.SearchModal do
               class="grow bg-transparent text-sm outline-none placeholder:text-base-content/50"
             />
             <span
-              :if={@index && @index.loading}
+              :if={@loading?}
               id="search-modal-loading"
               class="loading loading-spinner loading-sm text-base-content/40"
               aria-label="Recherche en cours"
@@ -92,7 +97,7 @@ defmodule TextexpWeb.SearchModal do
             class="hidden py-6 text-center text-sm text-base-content/60 only:block"
           >
             <%= cond do %>
-              <% @index && @index.failed -> %>
+              <% @failed? -> %>
                 La recherche n'est pas disponible
               <% @searched? -> %>
                 Aucun résultat
@@ -128,51 +133,45 @@ defmodule TextexpWeb.SearchModal do
     socket = assign(socket, form: to_form(%{"query" => query}, as: "search"))
 
     socket =
-      case socket.assigns.index do
-        nil when query != "" ->
-          user = socket.assigns.current_user
+      case String.trim(query) do
+        "" ->
+          socket
+          |> assign(loading?: false, searched?: false)
+          |> stream(:results, [], reset: true)
+
+        query ->
+          index = socket.assigns.index
 
           socket
-          |> assign(index: AsyncResult.loading())
-          |> start_async(:index, fn -> Search.new_index(user) end)
-
-        _ ->
-          show_results(socket)
+          |> assign(loading?: true)
+          |> start_async(:search, fn -> {query, SearchIndex.search(index, query)} end)
       end
 
     {:noreply, socket}
   end
 
-  def handle_async(:index, {:ok, {:ok, index}}, socket) do
-    {:noreply,
-     socket
-     |> assign(index: AsyncResult.ok(socket.assigns.index, index))
-     |> show_results()}
-  end
-
-  def handle_async(:index, _result, socket) do
-    {:noreply,
-     socket
-     |> assign(index: AsyncResult.failed(socket.assigns.index, :unavailable))
-     |> stream(:results, [], reset: true)}
-  end
-
-  # The documents matching the query, none without query. While the index is
-  # loading, the results are left as they are.
-  defp show_results(socket) do
-    query = String.trim(socket.assigns.form[:query].value)
-
-    case {query, socket.assigns.index} do
-      {"", _index} ->
-        socket |> assign(searched?: false) |> stream(:results, [], reset: true)
-
-      {query, %AsyncResult{ok?: true, result: index}} ->
-        socket
-        |> assign(searched?: true)
-        |> stream(:results, Search.search(index, query, socket.assigns.current_user), reset: true)
-
-      _loading_or_failed ->
-        socket
+  # A search replaced by another one is dropped by LiveView; one answering a
+  # query since cleared, here.
+  def handle_async(:search, {:ok, {query, result}}, socket) do
+    if query == String.trim(socket.assigns.form[:query].value) do
+      {:noreply, show_results(socket, result)}
+    else
+      {:noreply, socket}
     end
+  end
+
+  def handle_async(:search, {:exit, _reason}, socket),
+    do: {:noreply, show_results(socket, {:error, :exit})}
+
+  defp show_results(socket, {:ok, documents}) do
+    socket
+    |> assign(loading?: false, failed?: false, searched?: true)
+    |> stream(:results, documents, reset: true)
+  end
+
+  defp show_results(socket, {:error, _reason}) do
+    socket
+    |> assign(loading?: false, failed?: true)
+    |> stream(:results, [], reset: true)
   end
 end

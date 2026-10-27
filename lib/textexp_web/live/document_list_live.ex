@@ -3,9 +3,8 @@ defmodule TextexpWeb.DocumentListLive do
 
   import TextexpWeb.DocumentComponents
 
-  alias Phoenix.LiveView.AsyncResult
   alias Textexp.Document
-  alias Textexp.Document.{Search, YPersistence}
+  alias Textexp.Document.{SearchIndex, YPersistence}
 
   on_mount {TextexpWeb.LiveUserAuth, :live_user_required}
 
@@ -36,7 +35,7 @@ defmodule TextexpWeb.DocumentListLive do
               class="grow bg-transparent text-sm outline-none placeholder:text-base-content/50"
             />
             <span
-              :if={@index && @index.loading}
+              :if={@search_loading?}
               id="search-loading"
               class="loading loading-spinner loading-sm text-base-content/40"
               aria-label="Recherche en cours"
@@ -116,6 +115,7 @@ defmodule TextexpWeb.DocumentListLive do
        page_title: "Documents",
        search_form: to_form(%{"query" => ""}),
        searching?: false,
+       search_loading?: false,
        index: nil
      )
      |> stream(:documents, list_documents(socket.assigns.current_user))}
@@ -157,64 +157,62 @@ defmodule TextexpWeb.DocumentListLive do
     {:reply, %{}, put_flash(socket, :error, message)}
   end
 
-  # The search index is only built for the first search, in the background: it
-  # then stays in memory until the page is left.
+  # The search index (a SearchIndex process, linked to the page) is only
+  # started for the first search: it then stays until the page is left. Each
+  # search runs in a task, as it waits for the index while it is being built.
   def handle_event("search", %{"query" => query}, socket) do
     socket = assign(socket, search_form: to_form(%{"query" => query}))
 
     socket =
-      case socket.assigns.index do
-        nil when query != "" ->
-          user = socket.assigns.current_user
+      case String.trim(query) do
+        "" ->
+          socket
+          |> assign(searching?: false, search_loading?: false)
+          |> stream(:documents, list_documents(socket.assigns.current_user), reset: true)
+
+        query ->
+          socket = start_index(socket)
+          index = socket.assigns.index
 
           socket
-          |> assign(index: AsyncResult.loading())
-          |> start_async(:index, fn -> Search.new_index(user) end)
-
-        _ ->
-          show_results(socket)
+          |> assign(search_loading?: true)
+          |> start_async(:search, fn -> {query, SearchIndex.search(index, query)} end)
       end
 
     {:noreply, socket}
   end
 
-  def handle_async(:index, {:ok, {:ok, index}}, socket) do
-    {:noreply,
-     socket
-     |> assign(index: AsyncResult.ok(socket.assigns.index, index))
-     |> show_results()}
-  end
-
-  def handle_async(:index, result, socket) do
-    reason = with {:ok, {:error, reason}} <- result, do: reason
-
-    {:noreply,
-     socket
-     |> assign(index: AsyncResult.failed(socket.assigns.index, reason))
-     |> put_flash(:error, "La recherche n'est pas disponible")}
-  end
-
-  # The documents matching the query, or all of them without query. While the
-  # index is loading, the list is left as it is.
-  defp show_results(socket) do
-    query = String.trim(socket.assigns.search_form[:query].value)
-
-    case {query, socket.assigns.index} do
-      {"", _index} ->
-        socket
-        |> assign(searching?: false)
-        |> stream(:documents, list_documents(socket.assigns.current_user), reset: true)
-
-      {query, %AsyncResult{ok?: true, result: index}} ->
-        socket
-        |> assign(searching?: true)
-        |> stream(:documents, Search.search(index, query, socket.assigns.current_user),
-          reset: true
-        )
-
-      _loading_or_failed ->
-        socket
+  # A search replaced by another one is dropped by LiveView; one answering a
+  # query since cleared, here.
+  def handle_async(:search, {:ok, {query, result}}, socket) do
+    if query == String.trim(socket.assigns.search_form[:query].value) do
+      {:noreply, show_results(socket, result)}
+    else
+      {:noreply, socket}
     end
+  end
+
+  def handle_async(:search, {:exit, _reason}, socket),
+    do: {:noreply, show_results(socket, {:error, :exit})}
+
+  defp start_index(%{assigns: %{index: nil}} = socket) do
+    {:ok, index} = SearchIndex.start_link(socket.assigns.current_user)
+    assign(socket, index: index)
+  end
+
+  defp start_index(socket), do: socket
+
+  defp show_results(socket, {:ok, documents}) do
+    socket
+    |> assign(searching?: true, search_loading?: false)
+    |> stream(:documents, documents, reset: true)
+  end
+
+  # The list is left as it is
+  defp show_results(socket, {:error, _reason}) do
+    socket
+    |> assign(search_loading?: false)
+    |> put_flash(:error, "La recherche n'est pas disponible")
   end
 
   defp list_documents(user), do: Document.list_documents(user)

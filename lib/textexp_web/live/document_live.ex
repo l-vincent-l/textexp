@@ -3,7 +3,7 @@ defmodule TextexpWeb.DocumentLive do
 
   alias Textexp.Accounts
   alias Textexp.Document
-  alias Textexp.Document.{Policy, YPersistence}
+  alias Textexp.Document.{Policy, SearchIndex, YPersistence}
   alias TextexpWeb.Presence
 
   on_mount {TextexpWeb.LiveUserAuth, :live_user_required}
@@ -96,7 +96,7 @@ defmodule TextexpWeb.DocumentLive do
                 :if={@search_open?}
                 module={TextexpWeb.SearchModal}
                 id="search-modal"
-                current_user={@current_user}
+                index={@search_index}
               />
               <.share_panel
                 :if={@sharing?}
@@ -328,6 +328,7 @@ defmodule TextexpWeb.DocumentLive do
        can_share?: false,
        sharing?: false,
        search_open?: false,
+       search_index: nil,
        share_form: nil
      )
      |> stream(:viewers, [])
@@ -372,17 +373,24 @@ defmodule TextexpWeb.DocumentLive do
     end
 
     socket
+    |> close_search()
     |> assign(
       document: document,
       can_edit?: Policy.can?(document.role, :write),
       can_share?: Policy.can?(document.role, :share),
       sharing?: false,
-      search_open?: false,
       page_title: document.title || "Sans titre",
       last_update: document.updated_at,
       title_form: to_form(%{"title" => document.title})
     )
     |> stream(:viewers, if(connected?(socket), do: viewers(document.id), else: []), reset: true)
+  end
+
+  defp close_search(%{assigns: %{search_index: nil}} = socket), do: socket
+
+  defp close_search(socket) do
+    SearchIndex.stop(socket.assigns.search_index)
+    assign(socket, search_open?: false, search_index: nil)
   end
 
   defp leave_document(%{assigns: %{document: nil}} = socket), do: socket
@@ -508,11 +516,13 @@ defmodule TextexpWeb.DocumentLive do
   def handle_event("close_share", _params, socket),
     do: {:noreply, assign(socket, sharing?: false)}
 
-  def handle_event("open_search", _params, socket),
-    do: {:noreply, assign(socket, search_open?: true)}
+  # The search modal's index lives while it is open (see SearchModal).
+  def handle_event("open_search", _params, socket) do
+    {:ok, index} = SearchIndex.start_link(socket.assigns.current_user)
+    {:noreply, assign(socket, search_open?: true, search_index: index)}
+  end
 
-  def handle_event("close_search", _params, socket),
-    do: {:noreply, assign(socket, search_open?: false)}
+  def handle_event("close_search", _params, socket), do: {:noreply, close_search(socket)}
 
   def handle_event("toggle_share", _params, socket) do
     {:noreply,
