@@ -89,6 +89,41 @@ defmodule Textexp.Document.MembershipTest do
     end
   end
 
+  describe "change_member_role" do
+    test "changes what the member may do", %{owner: owner, document: document} do
+      member = register_user()
+      membership = Fixtures.share!(owner, document, member, :viewer)
+      Phoenix.PubSub.subscribe(Textexp.PubSub, Document.members_topic(document.id))
+
+      assert {:ok, %{role: :editor}} = Document.change_member_role(owner, membership.id, "editor")
+      assert {:ok, %{role: :editor}} = Document.get_document(document.id, member)
+      member_id = member.id
+      assert_receive {:member_changed, _, ^member_id, :editor}
+
+      assert {:ok, %{role: :viewer}} = Document.change_member_role(owner, membership.id, "viewer")
+      assert {:ok, %{role: :viewer}} = Document.get_document(document.id, member)
+    end
+
+    test "is reserved to the owner", %{owner: owner, document: document} do
+      member = register_user()
+      membership = Fixtures.share!(owner, document, member, :viewer)
+
+      assert {:error, :not_found} = Document.change_member_role(member, membership.id, "editor")
+      assert {:ok, %{role: :viewer}} = Document.get_document(document.id, member)
+    end
+
+    test "only to editor or viewer", %{owner: owner, document: document} do
+      member = register_user()
+      membership = Fixtures.share!(owner, document, member, :viewer)
+
+      for role <- ["owner", "", "nope"] do
+        assert {:error, :not_found} = Document.change_member_role(owner, membership.id, role)
+      end
+
+      assert {:ok, %{role: :viewer}} = Document.get_document(document.id, member)
+    end
+  end
+
   describe "remove_member" do
     test "takes the access back", %{owner: owner, document: document} do
       member = register_user()
