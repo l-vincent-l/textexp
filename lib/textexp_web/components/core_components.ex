@@ -67,7 +67,7 @@ defmodule TextexpWeb.CoreComponents do
       {@rest}
     >
       <div class={[
-        "alert w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap",
+        "alert w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap border-2 border-base-content shadow-hard",
         @kind == :info && "alert-info",
         @kind == :error && "alert-error"
       ]}>

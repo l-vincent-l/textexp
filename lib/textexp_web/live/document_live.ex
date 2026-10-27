@@ -28,8 +28,8 @@ defmodule TextexpWeb.DocumentLive do
             </label>
           </div>
 
-          <%!-- The title shares the background, font and margins of the BlockNote editor (light theme) --%>
-          <div class="flex flex-1 flex-col bg-white font-['Inter',sans-serif] text-[#3f3f3f]">
+          <%!-- The title shares the margins of the BlockNote editor, which takes the theme's colors and font (see blocknote.css) --%>
+          <div class="flex flex-1 flex-col">
             <div class="document-header px-[54px] pt-12 pb-2">
               <.form
                 for={@title_form}
@@ -45,11 +45,11 @@ defmodule TextexpWeb.DocumentLive do
                   phx-debounce="300"
                   autocomplete="off"
                   readonly={!@can_edit?}
-                  class="w-full bg-transparent text-4xl font-bold leading-tight outline-none placeholder:text-[#cfcfcf]"
+                  class="w-full bg-transparent text-2xl font-medium leading-tight tracking-wide outline-none placeholder:text-base-content/30 sm:text-3xl"
                 />
               </.form>
               <div class="mt-1 flex flex-wrap items-center justify-between gap-2">
-                <p id="last-update" class="text-sm text-[#9b9b9b]">
+                <p id="last-update" class="text-xs text-base-content/60">
                   Dernière mise à jour : {Calendar.strftime(@last_update, "%d/%m/%Y %H:%M:%S")} UTC
                 </p>
                 <div class="flex items-center gap-3">
@@ -60,11 +60,11 @@ defmodule TextexpWeb.DocumentLive do
                       id={id}
                       title={viewer.email}
                       class={[
-                        "flex size-8 items-center justify-center rounded-full text-xs font-semibold uppercase",
-                        "ring-2 ring-white transition-transform duration-150 hover:z-10 hover:-translate-y-0.5",
+                        "flex size-8 items-center justify-center border-2 border-base-content text-xs font-medium uppercase",
+                        "transition-transform duration-150 hover:z-10 hover:-translate-y-0.5",
                         if(viewer.id == @current_user.id,
-                          do: "bg-[#3f3f3f] text-white",
-                          else: "bg-[#ececec] text-[#3f3f3f]"
+                          do: "bg-primary text-primary-content",
+                          else: "bg-base-300 text-base-content"
                         )
                       ]}
                     >
@@ -79,11 +79,10 @@ defmodule TextexpWeb.DocumentLive do
                     aria-expanded={to_string(@sharing?)}
                     aria-controls="share-panel"
                     class={[
-                      "btn btn-sm rounded-full border-[#e3e3e3] px-4 font-medium shadow-none",
-                      "transition-colors duration-150",
+                      "btn btn-sm border-base-content px-4",
                       if(@sharing?,
-                        do: "bg-[#3f3f3f] text-white hover:bg-[#2b2b2b]",
-                        else: "bg-white text-[#3f3f3f] hover:bg-[#f4f4f4]"
+                        do: "btn-primary",
+                        else: "bg-base-100 hover:bg-primary hover:text-primary-content"
                       )
                     ]}
                   >
@@ -96,7 +95,7 @@ defmodule TextexpWeb.DocumentLive do
                 form={@share_form}
                 members={@streams.members}
               />
-              <div class="divider"></div>
+              <hr class="mt-6 border-t-2 border-dotted border-base-content/40" />
             </div>
             <%!-- Managed by the DocumentEditor hook: LiveView must not touch it. Its
                    id changes with the document so that LiveView replaces it, and the
@@ -117,14 +116,14 @@ defmodule TextexpWeb.DocumentLive do
                 data-skeleton
                 role="status"
                 aria-label="Chargement du document"
-                class="flex flex-col gap-3 px-[54px] py-1 motion-safe:animate-pulse"
+                class="flex flex-col gap-3 px-[54px] py-4 motion-safe:animate-pulse"
               >
-                <div class="h-4 w-3/4 rounded bg-[#ececec]"></div>
-                <div class="h-4 w-full rounded bg-[#ececec]"></div>
-                <div class="h-4 w-5/6 rounded bg-[#ececec]"></div>
-                <div class="h-4 w-2/5 rounded bg-[#ececec]"></div>
-                <div class="mt-4 h-4 w-11/12 rounded bg-[#ececec]"></div>
-                <div class="h-4 w-2/3 rounded bg-[#ececec]"></div>
+                <div class="h-4 w-3/4 bg-base-300"></div>
+                <div class="h-4 w-full bg-base-300"></div>
+                <div class="h-4 w-5/6 bg-base-300"></div>
+                <div class="h-4 w-2/5 bg-base-300"></div>
+                <div class="mt-4 h-4 w-11/12 bg-base-300"></div>
+                <div class="h-4 w-2/3 bg-base-300"></div>
               </div>
               <div data-editor hidden></div>
             </div>
@@ -133,10 +132,10 @@ defmodule TextexpWeb.DocumentLive do
 
         <div class="drawer-side z-20">
           <label for="sidebar-drawer" aria-label="Fermer le menu" class="drawer-overlay"></label>
-          <div class="flex min-h-full w-64 flex-col bg-base-200 p-4">
+          <div class="flex min-h-full w-64 flex-col border-r-2 border-base-content bg-base-100 p-4">
             <button
               id="new-document"
-              class="btn btn-ghost btn-sm mb-2 justify-start"
+              class="btn btn-sm mb-3 justify-start border-base-content bg-base-100 hover:bg-primary hover:text-primary-content"
               phx-click="new_document"
             >
               <.icon name="hero-plus" class="size-4" /> Nouveau document
@@ -170,10 +169,10 @@ defmodule TextexpWeb.DocumentLive do
     ~H"""
     <section
       id="share-panel"
-      class="mt-4 rounded-2xl border border-[#ececec] bg-[#fafafa] p-4 sm:p-5"
+      class="mt-4 border-2 border-base-content bg-base-100 p-4 shadow-hard sm:p-5"
     >
-      <h2 class="text-sm font-semibold text-[#3f3f3f]">Partager ce document</h2>
-      <p class="mt-0.5 text-xs text-[#9b9b9b]">
+      <h2 class="text-sm uppercase">Partager ce document</h2>
+      <p class="mt-0.5 text-xs text-base-content/60">
         La personne doit déjà avoir un compte.
       </p>
       <.form
@@ -199,14 +198,18 @@ defmodule TextexpWeb.DocumentLive do
         />
         <button
           id="share-submit"
-          class="btn btn-neutral transition-transform duration-150 active:scale-95"
+          class="btn btn-primary"
           phx-disable-with="Invitation…"
         >
           Inviter
         </button>
       </.form>
-      <ul id="members" phx-update="stream" class="mt-2 divide-y divide-[#ececec]">
-        <li id="members-empty" class="hidden py-2 text-sm text-[#9b9b9b] only:block">
+      <ul
+        id="members"
+        phx-update="stream"
+        class="mt-2 divide-y-2 divide-dotted divide-base-content/30"
+      >
+        <li id="members-empty" class="hidden py-2 text-sm text-base-content/60 only:block">
           Pas encore partagé.
         </li>
         <li
@@ -215,7 +218,7 @@ defmodule TextexpWeb.DocumentLive do
           class="group flex items-center justify-between gap-3 py-2 text-sm"
         >
           <span class="flex min-w-0 items-center gap-2">
-            <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#ececec] text-xs font-semibold uppercase">
+            <span class="flex size-7 shrink-0 items-center justify-center border-2 border-base-content bg-base-300 text-xs font-medium uppercase">
               {String.first(member.email)}
             </span>
             <span class="truncate">{member.email}</span>
@@ -235,10 +238,10 @@ defmodule TextexpWeb.DocumentLive do
                 options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
                 aria-label={"Rôle de #{member.email}"}
                 class={[
-                  "select select-xs w-24 rounded-full border-0 font-medium",
+                  "select select-xs w-24 border-base-content",
                   if(member.role == :editor,
-                    do: "bg-[#e8f0fe] text-[#1a56db]",
-                    else: "bg-[#ececec] text-[#6b6b6b]"
+                    do: "bg-primary text-primary-content",
+                    else: "bg-base-100 text-base-content"
                   )
                 ]}
               />

@@ -2,7 +2,6 @@
    https://tailwindcss.com/docs/configuration */
 
 @import "tailwindcss" source(none);
-@source "../../deps/ash_authentication_phoenix";
 @import "phoenix-colocated/textexp/colocated.css";
 @source "../css";
 @source "../js";
@@ -19,77 +18,201 @@
   themes: false;
 }
 
-/* daisyUI theme plugin.
-  We ship with two themes, a light one inspired on Phoenix colors and a dark one inspired
-  on Elixir colors. Build your own at: https://daisyui.com/theme-generator/ */
-@plugin "daisyui/packages/bundle/daisyui-theme" {
-  name: "dark";
-  default: false;
-  prefersdark: true;
-  color-scheme: "dark";
-  --color-base-100: oklch(30.33% 0.016 252.42);
-  --color-base-200: oklch(25.26% 0.014 253.1);
-  --color-base-300: oklch(20.15% 0.012 254.09);
-  --color-base-content: oklch(97.807% 0.029 256.847);
-  --color-primary: oklch(58% 0.233 277.117);
-  --color-primary-content: oklch(96% 0.018 272.314);
-  --color-secondary: oklch(58% 0.233 277.117);
-  --color-secondary-content: oklch(96% 0.018 272.314);
-  --color-accent: oklch(60% 0.25 292.717);
-  --color-accent-content: oklch(96% 0.016 293.756);
-  --color-neutral: oklch(37% 0.044 257.287);
-  --color-neutral-content: oklch(98% 0.003 247.858);
-  --color-info: oklch(58% 0.158 241.966);
-  --color-info-content: oklch(97% 0.013 236.62);
-  --color-success: oklch(60% 0.118 184.704);
-  --color-success-content: oklch(98% 0.014 180.72);
-  --color-warning: oklch(66% 0.179 58.318);
-  --color-warning-content: oklch(98% 0.022 95.277);
-  --color-error: oklch(58% 0.253 17.585);
-  --color-error-content: oklch(96% 0.015 12.422);
-  --radius-selector: 0.25rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.21875rem;
-  --size-field: 0.21875rem;
-  --border: 1.5px;
-  --depth: 1;
-  --noise: 0;
-}
-
+/* The look of terriblesoftware.org: a monospace font, deep purple ink on a
+   pinkish white page, lavender accents, square corners, 2px borders and hard
+   shadows. The dark theme swaps ink and page. */
 @plugin "daisyui/packages/bundle/daisyui-theme" {
   name: "light";
   default: true;
   prefersdark: false;
   color-scheme: "light";
-  --color-base-100: oklch(98% 0 0);
-  --color-base-200: oklch(96% 0.001 286.375);
-  --color-base-300: oklch(92% 0.004 286.32);
-  --color-base-content: oklch(21% 0.006 285.885);
-  --color-primary: oklch(70% 0.213 47.604);
-  --color-primary-content: oklch(98% 0.016 73.684);
-  --color-secondary: oklch(55% 0.027 264.364);
-  --color-secondary-content: oklch(98% 0.002 247.839);
-  --color-accent: oklch(0% 0 0);
-  --color-accent-content: oklch(100% 0 0);
-  --color-neutral: oklch(44% 0.017 285.786);
-  --color-neutral-content: oklch(98% 0 0);
-  --color-info: oklch(62% 0.214 259.815);
-  --color-info-content: oklch(97% 0.014 254.604);
-  --color-success: oklch(70% 0.14 182.503);
-  --color-success-content: oklch(98% 0.014 180.72);
-  --color-warning: oklch(66% 0.179 58.318);
-  --color-warning-content: oklch(98% 0.022 95.277);
-  --color-error: oklch(58% 0.253 17.585);
-  --color-error-content: oklch(96% 0.015 12.422);
-  --radius-selector: 0.25rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.21875rem;
-  --size-field: 0.21875rem;
-  --border: 1.5px;
-  --depth: 1;
+  --color-base-100: #fff8f8;
+  --color-base-200: #f8eef3;
+  --color-base-300: #dacff3;
+  --color-base-content: #250e51;
+  --color-primary: #250e51;
+  --color-primary-content: #fff8f8;
+  --color-secondary: #dacff3;
+  --color-secondary-content: #250e51;
+  --color-accent: #dacff3;
+  --color-accent-content: #250e51;
+  --color-neutral: #250e51;
+  --color-neutral-content: #fff8f8;
+  --color-info: #3b2a8f;
+  --color-info-content: #fff8f8;
+  --color-success: #1d6b52;
+  --color-success-content: #fff8f8;
+  --color-warning: #ffd84d;
+  --color-warning-content: #250e51;
+  --color-error: #b3123d;
+  --color-error-content: #fff8f8;
+  --radius-selector: 0;
+  --radius-field: 0;
+  --radius-box: 0;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 2px;
+  --depth: 0;
   --noise: 0;
+}
+
+@plugin "daisyui/packages/bundle/daisyui-theme" {
+  name: "dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: #1a0a3b;
+  --color-base-200: #230f4b;
+  --color-base-300: #3a2766;
+  --color-base-content: #fff8f8;
+  --color-primary: #dacff3;
+  --color-primary-content: #1a0a3b;
+  --color-secondary: #3a2766;
+  --color-secondary-content: #fff8f8;
+  --color-accent: #dacff3;
+  --color-accent-content: #1a0a3b;
+  --color-neutral: #dacff3;
+  --color-neutral-content: #1a0a3b;
+  --color-info: #b8a8f0;
+  --color-info-content: #1a0a3b;
+  --color-success: #7fd8b4;
+  --color-success-content: #1a0a3b;
+  --color-warning: #ffd84d;
+  --color-warning-content: #1a0a3b;
+  --color-error: #ff8fa8;
+  --color-error-content: #1a0a3b;
+  --radius-selector: 0;
+  --radius-field: 0;
+  --radius-box: 0;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 2px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* Self-hosted (SIL Open Font License, see priv/static/fonts). */
+@font-face {
+  font-family: "DM Mono";
+  font-weight: 300;
+  font-display: swap;
+  src: url("/fonts/dm-mono-latin-300-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "DM Mono";
+  font-weight: 300;
+  font-display: swap;
+  src: url("/fonts/dm-mono-latin-ext-300-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "DM Mono";
+  font-weight: 300;
+  font-style: italic;
+  font-display: swap;
+  src: url("/fonts/dm-mono-latin-300-italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "DM Mono";
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/dm-mono-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "DM Mono";
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/dm-mono-latin-ext-500-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Silkscreen";
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/silkscreen-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Silkscreen";
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/silkscreen-latin-ext-400-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@theme {
+  --font-sans: "DM Mono", ui-monospace, monospace;
+  --font-mono: "DM Mono", ui-monospace, monospace;
+  /* The site name, in pixels */
+  --font-pixel: "Silkscreen", "DM Mono", monospace;
+  /* A hard shadow, offset down right, set off from the box by a gap */
+  --shadow-hard: 5px 5px 0 -2px var(--color-base-100), 5px 5px 0 0 var(--color-base-content);
+  --shadow-hard-sm: 3px 3px 0 0 var(--color-base-content);
+}
+
+@layer base {
+  body {
+    font-weight: 300;
+    line-height: 1.6;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    line-height: 1.2;
+  }
+
+  a {
+    text-underline-offset: 0.3em;
+  }
+
+  ::selection {
+    background: var(--color-base-300);
+    color: var(--color-base-content);
+  }
+}
+
+/* In the utilities layer, where daisyUI puts its components (in sub-layers,
+   which these rules override). */
+@layer utilities {
+  /* daisyUI's buttons, squared: ink border, filled on hover, hard shadow
+     when pressed. */
+  .btn {
+    font-weight: 400;
+    box-shadow: none;
+  }
+  .btn:not(.btn-ghost, .btn-link) {
+    border-color: var(--color-base-content);
+  }
+  .btn:not(.btn-ghost, .btn-link, .btn-primary, .btn-neutral, .btn-error, .btn-info, .btn-success, .btn-warning) {
+    background-color: var(--color-base-100);
+  }
+  .btn:not(.btn-ghost, .btn-link, .btn-primary):hover {
+    background-color: var(--color-primary);
+    color: var(--color-primary-content);
+  }
+
+  /* Fields drawn in ink, like buttons */
+  .input,
+  .select,
+  .textarea,
+  .checkbox {
+    border-color: var(--color-base-content);
+  }
+  .btn:active:not(.btn-ghost) {
+    box-shadow: var(--shadow-hard-sm);
+    translate: -1px -1px;
+  }
+
+  .link,
+  .link:hover {
+    text-decoration-line: underline;
+  }
+  .link:hover {
+    text-decoration-style: dotted;
+  }
 }
 
 /* Add variants based on LiveView classes */

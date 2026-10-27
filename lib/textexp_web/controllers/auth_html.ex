@@ -129,7 +129,7 @@ defmodule TextexpWeb.AuthHTML do
     ~H"""
     <Layouts.app flash={@flash}>
       <div class="mx-auto flex w-full max-w-sm flex-col gap-4">
-        <h1 class="text-2xl font-semibold">{@title}</h1>
+        <h1 class="text-xl uppercase">{@title}</h1>
         {render_slot(@inner_block)}
       </div>
     </Layouts.app>

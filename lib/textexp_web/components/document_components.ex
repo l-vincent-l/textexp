@@ -24,18 +24,18 @@ defmodule TextexpWeb.DocumentComponents do
     ~H"""
     <.link
       navigate={~p"/documents/#{@document.id}"}
-      class="group block rounded-box border border-base-300 bg-base-100 px-5 py-4 transition duration-150 ease-out hover:-translate-y-0.5 hover:border-base-content/20 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      class="group block border-2 border-base-content bg-base-100 px-5 py-4 no-underline transition duration-150 ease-out hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-base-content"
     >
       <div class="flex items-baseline justify-between gap-4">
         <h2 class={[
-          "truncate text-base font-semibold",
-          if(@document.title, do: "text-base-content", else: "text-base-content/40")
+          "truncate text-base font-medium group-hover:underline group-hover:decoration-dotted",
+          if(@document.title, do: "text-base-content", else: "text-base-content/50")
         ]}>
           {@document.title || "Sans titre"}
         </h2>
         <time
           datetime={DateTime.to_iso8601(@document.updated_at)}
-          class="shrink-0 text-xs tabular-nums text-base-content/50"
+          class="shrink-0 text-xs tabular-nums text-base-content/60"
         >
           {Calendar.strftime(@document.updated_at, "%d/%m/%Y %H:%M")} UTC
         </time>
@@ -43,12 +43,12 @@ defmodule TextexpWeb.DocumentComponents do
       <%!-- On one line: whitespace between the segments would show --%>
       <p
         :if={@snippet}
-        class="mt-1.5 line-clamp-3 text-sm leading-relaxed text-base-content/70"
+        class="mt-1.5 line-clamp-3 text-sm leading-relaxed text-base-content/75"
         phx-no-format
-      ><%= for {kind, text} <- @snippet do %><mark :if={kind == :match} class="rounded-sm bg-warning/40 px-0.5 font-medium text-base-content">{text}</mark><span :if={kind == :text}>{text}</span><% end %></p>
+      ><%= for {kind, text} <- @snippet do %><mark :if={kind == :match} class="bg-base-300 px-0.5 font-medium text-base-content">{text}</mark><span :if={kind == :text}>{text}</span><% end %></p>
       <p
         :if={!@snippet && @document.excerpt}
-        class="mt-1.5 line-clamp-3 whitespace-pre-line text-sm leading-relaxed text-base-content/70"
+        class="mt-1.5 line-clamp-3 whitespace-pre-line text-sm leading-relaxed text-base-content/75"
       >
         {@document.excerpt}
       </p>

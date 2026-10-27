@@ -12,7 +12,7 @@ defmodule TextexpWeb.DocumentListLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_user={@current_user} full_width>
-      <div id="documents-page" class="mx-auto w-full max-w-3xl px-4 py-10 sm:py-14">
+      <div id="documents-page" class="mx-auto w-full max-w-2xl px-4 py-10 sm:py-14">
         <.form
           for={@search_form}
           id="search-form"
@@ -20,10 +20,10 @@ defmodule TextexpWeb.DocumentListLive do
           phx-submit="search"
           class="mb-3"
         >
-          <label class="group flex items-center gap-3 rounded-box border border-base-300 bg-base-100 px-4 py-2.5 transition duration-150 focus-within:border-primary/50 focus-within:shadow-md">
+          <label class="group flex items-center gap-3 border-2 border-base-content bg-base-100 px-4 py-2.5 transition duration-150 focus-within:shadow-hard">
             <.icon
               name="hero-magnifying-glass"
-              class="size-5 shrink-0 text-base-content/40 transition-colors group-focus-within:text-primary"
+              class="size-5 shrink-0 text-base-content/50 transition-colors group-focus-within:text-base-content"
             />
             <input
               id="search-query"
@@ -33,7 +33,7 @@ defmodule TextexpWeb.DocumentListLive do
               placeholder="Rechercher dans les documents"
               autocomplete="off"
               phx-debounce="300"
-              class="grow bg-transparent text-base outline-none placeholder:text-base-content/40"
+              class="grow bg-transparent text-sm outline-none placeholder:text-base-content/50"
             />
             <span
               :if={@index && @index.loading}
@@ -51,14 +51,14 @@ defmodule TextexpWeb.DocumentListLive do
             id="new-document"
             type="button"
             phx-click="new_document"
-            class="group flex w-full items-center gap-4 rounded-box border border-primary/30 bg-primary/5 px-5 py-4 text-left transition duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/10 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary phx-click-loading:pointer-events-none phx-click-loading:opacity-60"
+            class="group flex w-full cursor-pointer items-center gap-4 border-2 border-base-content bg-primary px-5 py-4 text-left text-primary-content transition duration-150 ease-out hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-base-content phx-click-loading:pointer-events-none phx-click-loading:opacity-60"
           >
-            <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-content transition-transform duration-150 group-hover:scale-110">
+            <span class="flex size-9 shrink-0 items-center justify-center border-2 border-primary-content">
               <.icon name="hero-plus" class="size-5" />
             </span>
             <span class="flex flex-col">
-              <span class="text-base font-semibold text-primary">Nouveau document</span>
-              <span class="text-sm text-base-content/60">Commencer une page vierge</span>
+              <span class="text-sm font-medium uppercase tracking-wide">Nouveau document</span>
+              <span class="text-xs opacity-75">Commencer une page vierge</span>
             </span>
           </button>
 
@@ -67,15 +67,15 @@ defmodule TextexpWeb.DocumentListLive do
           <label
             id="import-document"
             data-import
-            class="group flex cursor-pointer items-center gap-4 rounded-box border border-base-300 bg-base-100 px-5 py-4 text-left transition duration-150 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary aria-busy:pointer-events-none aria-busy:opacity-60"
+            class="group flex cursor-pointer items-center gap-4 border-2 border-base-content bg-base-100 px-5 py-4 text-left transition duration-150 ease-out hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-base-content aria-busy:pointer-events-none aria-busy:opacity-60"
           >
-            <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-base-200 text-base-content/70 transition-transform duration-150 group-hover:scale-110">
+            <span class="flex size-9 shrink-0 items-center justify-center border-2 border-base-content bg-base-300">
               <.icon name="hero-arrow-up-tray" class="size-5 group-aria-busy:hidden" />
               <span class="loading loading-spinner loading-sm hidden group-aria-busy:inline-block"></span>
             </span>
             <span class="flex flex-col">
-              <span class="text-base font-semibold">Importer</span>
-              <span class="text-sm text-base-content/60">Markdown, HTML ou texte</span>
+              <span class="text-sm font-medium uppercase tracking-wide">Importer</span>
+              <span class="text-xs text-base-content/60">Markdown, HTML ou texte</span>
             </span>
             <input
               id="import-files"
@@ -89,10 +89,10 @@ defmodule TextexpWeb.DocumentListLive do
         </div>
 
         <%!-- Sorted by last update, most recent first; by relevance when searching --%>
-        <ul id="documents" class="mt-3 flex flex-col gap-3" phx-update="stream">
+        <ul id="documents" class="mt-4 flex flex-col gap-4" phx-update="stream">
           <li
             id="documents-empty"
-            class="hidden only:block rounded-box border border-dashed border-base-300 px-4 py-10 text-center text-sm text-base-content/60"
+            class="hidden only:block border-2 border-dashed border-base-content/40 px-4 py-10 text-center text-sm text-base-content/60"
           >
             {if @searching?, do: "Aucun résultat", else: "Aucun document"}
           </li>
