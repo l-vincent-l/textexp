@@ -221,15 +221,28 @@ defmodule TextexpWeb.DocumentLive do
             <span class="truncate">{member.email}</span>
           </span>
           <span class="flex shrink-0 items-center gap-1">
-            <span class={[
-              "rounded-full px-2 py-0.5 text-xs font-medium",
-              if(member.role == :editor,
-                do: "bg-[#e8f0fe] text-[#1a56db]",
-                else: "bg-[#ececec] text-[#6b6b6b]"
-              )
-            ]}>
-              {if member.role == :editor, do: "Éditeur", else: "Lecteur"}
-            </span>
+            <.form
+              :let={f}
+              for={role_form(member)}
+              id={"role-#{member.id}"}
+              phx-change="change_role"
+              class="[&_.fieldset]:m-0 [&_.fieldset]:p-0"
+            >
+              <.input field={f[:membership_id]} type="hidden" />
+              <.input
+                field={f[:role]}
+                type="select"
+                options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
+                aria-label={"Rôle de #{member.email}"}
+                class={[
+                  "select select-xs w-24 rounded-full border-0 font-medium",
+                  if(member.role == :editor,
+                    do: "bg-[#e8f0fe] text-[#1a56db]",
+                    else: "bg-[#ececec] text-[#6b6b6b]"
+                  )
+                ]}
+              />
+            </.form>
             <button
               id={"remove-#{member.id}"}
               type="button"
@@ -462,6 +475,19 @@ defmodule TextexpWeb.DocumentLive do
     end
   end
 
+  def handle_event("change_role", %{"member" => %{"membership_id" => id, "role" => role}}, socket) do
+    case Document.change_member_role(socket.assigns.current_user, id, role) do
+      {:ok, member} ->
+        {:noreply,
+         socket
+         |> stream_insert(:members, member)
+         |> put_flash(:info, "#{member.email} est maintenant #{role_label(member.role)}")}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Impossible de changer le rôle de ce membre")}
+    end
+  end
+
   def handle_event("remove_member", %{"id" => id}, socket) do
     case Document.remove_member(socket.assigns.current_user, id) do
       :ok -> {:noreply, stream_delete_by_dom_id(socket, :members, "members-#{id}")}
@@ -488,6 +514,17 @@ defmodule TextexpWeb.DocumentLive do
     )
     |> stream_insert(:documents, document)
   end
+
+  # The form of a member's role, in their row of the share panel.
+  defp role_form(member) do
+    to_form(%{"membership_id" => member.id, "role" => to_string(member.role)},
+      as: "member",
+      id: "member-#{member.id}"
+    )
+  end
+
+  defp role_label(:editor), do: "éditeur"
+  defp role_label(:viewer), do: "lecteur"
 
   # The form inviting an address to the open document.
   defp share_form, do: to_form(Document.change_share(%{role: :viewer}), as: "share")

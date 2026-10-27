@@ -244,6 +244,29 @@ defmodule TextexpWeb.DocumentLiveTest do
       assert {:error, _} = Document.get_document(document.id, viewer)
     end
 
+    test "the owner switches a member between viewer and editor",
+         %{conn: conn, owner: owner, document: document} do
+      member = register_user()
+      membership = Fixtures.share!(owner, document, member, :viewer)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      view |> element("#share-button") |> render_click()
+
+      view
+      |> form("#role-#{membership.id}", member: %{role: "editor"})
+      |> render_change()
+
+      assert has_element?(view, "#role-#{membership.id} option[selected][value=editor]")
+      assert {:ok, %{role: :editor}} = Document.get_document(document.id, member)
+
+      view
+      |> form("#role-#{membership.id}", member: %{role: "viewer"})
+      |> render_change()
+
+      assert has_element?(view, "#role-#{membership.id} option[selected][value=viewer]")
+      assert {:ok, %{role: :viewer}} = Document.get_document(document.id, member)
+    end
+
     test "a member removed is sent back to the list", %{owner: owner, document: document} do
       viewer = register_user()
       membership = Fixtures.share!(owner, document, viewer, :viewer)

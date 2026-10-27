@@ -319,6 +319,27 @@ defmodule Textexp.Document do
     )
   end
 
+  @doc """
+  Changes the role of a member of a document that `owner` owns: `role` is
+  `"editor"` or `"viewer"`. Returns the member as listed by `list_members/2`.
+  """
+  def change_member_role(owner, membership_id, role) do
+    with {:ok, membership_id} <- Ecto.UUID.cast(membership_id),
+         {:ok, role} when not is_nil(role) <-
+           Ecto.Type.cast(Membership.__schema__(:type, :role), role),
+         %Membership{} = membership <- Repo.get(Membership, membership_id),
+         {:ok, member} <-
+           authorized(membership.document_id, owner, :share, fn document ->
+             membership |> Changeset.change(role: role) |> Repo.update!()
+             {:ok, Enum.find(members(document.id), &(&1.id == membership.id))}
+           end) do
+      broadcast_member_changed(membership.document_id, membership.user_id, role)
+      {:ok, member}
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
   @doc "Removes a member of a document that `owner` owns."
   def remove_member(owner, membership_id) do
     with {:ok, membership_id} <- Ecto.UUID.cast(membership_id),
