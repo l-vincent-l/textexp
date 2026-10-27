@@ -24,7 +24,7 @@ defmodule TextexpWeb.DocumentLiveTest do
       editor = "#document-editor-#{document.id}[phx-hook='DocumentEditor']"
       assert has_element?(view, "#{editor}[data-document-id='#{document.id}']")
       assert has_element?(view, "#documents-link[href='/documents']")
-      assert has_element?(view, "#search-link[href='/documents?search']")
+      assert has_element?(view, "#search-button")
       assert has_element?(view, "#{editor} [data-skeleton]")
       assert has_element?(view, "#{editor} [data-editor][hidden]")
 
@@ -243,6 +243,26 @@ defmodule TextexpWeb.DocumentLiveTest do
 
       refute has_element?(view, "#members-#{membership.id}")
       assert {:error, _} = Document.get_document(document.id, viewer)
+    end
+
+    test "the search modal finds documents by their text", %{
+      conn: conn,
+      owner: owner,
+      document: document
+    } do
+      other = Fixtures.create_document!(owner, %{title: "Recette de la tarte"})
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      view |> element("#search-button") |> render_click()
+      assert has_element?(view, "#search-panel[role=dialog]")
+
+      view |> form("#search-modal-form", search: %{query: "tarte"}) |> render_change()
+      # The index is built in the background
+      assert render_async(view) =~ "Recette de la tarte"
+      assert has_element?(view, "#search-results a[href='/documents/#{other.id}']")
+
+      view |> element("#search-close") |> render_click()
+      refute has_element?(view, "#search-panel")
     end
 
     test "the share modal closes with its button and Escape", %{conn: conn, document: document} do

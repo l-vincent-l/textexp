@@ -92,6 +92,12 @@ defmodule TextexpWeb.DocumentLive do
                   </li>
                 </ul>
               </div>
+              <.live_component
+                :if={@search_open?}
+                module={TextexpWeb.SearchModal}
+                id="search-modal"
+                current_user={@current_user}
+              />
               <.share_panel
                 :if={@sharing?}
                 form={@share_form}
@@ -137,15 +143,16 @@ defmodule TextexpWeb.DocumentLive do
           <div class="flex min-h-full w-64 flex-col border-r-2 border-base-content bg-base-100 p-4">
             <div class="mb-3 flex items-center justify-between">
               <Layouts.logo class="px-1" />
-              <.link
-                id="search-link"
-                navigate={~p"/documents?search"}
+              <button
+                id="search-button"
+                type="button"
+                phx-click="open_search"
                 aria-label="Rechercher"
                 title="Rechercher"
                 class="btn btn-ghost btn-sm btn-square"
               >
                 <.icon name="hero-magnifying-glass" class="size-5" />
-              </.link>
+              </button>
             </div>
             <button
               id="new-document"
@@ -320,6 +327,7 @@ defmodule TextexpWeb.DocumentLive do
        can_edit?: false,
        can_share?: false,
        sharing?: false,
+       search_open?: false,
        share_form: nil
      )
      |> stream(:viewers, [])
@@ -369,6 +377,7 @@ defmodule TextexpWeb.DocumentLive do
       can_edit?: Policy.can?(document.role, :write),
       can_share?: Policy.can?(document.role, :share),
       sharing?: false,
+      search_open?: false,
       page_title: document.title || "Sans titre",
       last_update: document.updated_at,
       title_form: to_form(%{"title" => document.title})
@@ -498,6 +507,12 @@ defmodule TextexpWeb.DocumentLive do
 
   def handle_event("close_share", _params, socket),
     do: {:noreply, assign(socket, sharing?: false)}
+
+  def handle_event("open_search", _params, socket),
+    do: {:noreply, assign(socket, search_open?: true)}
+
+  def handle_event("close_search", _params, socket),
+    do: {:noreply, assign(socket, search_open?: false)}
 
   def handle_event("toggle_share", _params, socket) do
     {:noreply,
