@@ -1,6 +1,8 @@
 defmodule TextexpWeb.YDocRoomChannelTest do
   use Textexp.DataCase
 
+  alias Textexp.Fixtures
+
   import Phoenix.ChannelTest
 
   alias Textexp.Document
@@ -8,15 +10,7 @@ defmodule TextexpWeb.YDocRoomChannelTest do
 
   @endpoint TextexpWeb.Endpoint
 
-  defp register_user do
-    Textexp.Accounts.User
-    |> Ash.Changeset.for_create(:register_with_password, %{
-      email: "channel-#{System.unique_integer([:positive])}@example.com",
-      password: "a-long-password",
-      password_confirmation: "a-long-password"
-    })
-    |> Ash.create!(authorize?: false)
-  end
+  defp register_user, do: Fixtures.confirmed_user()
 
   defp join_as(user, document_id) do
     UserSocket
@@ -46,7 +40,7 @@ defmodule TextexpWeb.YDocRoomChannelTest do
 
     GenServer.stop(socket.assigns.doc_pid)
 
-    case Document.get_document!(document.id, authorize?: false).snapshot do
+    case Document.get_document!(document.id).snapshot do
       nil ->
         nil
 
@@ -60,11 +54,11 @@ defmodule TextexpWeb.YDocRoomChannelTest do
   setup do
     owner = register_user()
     # Titled, so that it is kept, not deleted, when its DocServer stops.
-    %{owner: owner, document: Document.create_document!(%{title: "Notes"}, actor: owner)}
+    %{owner: owner, document: Fixtures.create_document!(owner, %{title: "Notes"})}
   end
 
   test "joining an unknown document is refused", %{owner: owner} do
-    assert {:error, %{reason: "unauthorized"}} = join_as(owner, Ash.UUID.generate())
+    assert {:error, %{reason: "unauthorized"}} = join_as(owner, Ecto.UUID.generate())
   end
 
   test "joining another user's document is refused", %{document: document} do
@@ -80,7 +74,7 @@ defmodule TextexpWeb.YDocRoomChannelTest do
 
   test "an editor edits the document", %{owner: owner, document: document} do
     editor = register_user()
-    Document.set_document_members!(document, [%{id: editor.id, role: :editor}], actor: owner)
+    Fixtures.share!(owner, document, editor, :editor)
 
     {:ok, _reply, socket} = join_as(editor, document.id)
     push_edit(socket, "hello")
@@ -105,11 +99,55 @@ defmodule TextexpWeb.YDocRoomChannelTest do
 
   test "a viewer joins, but its edits are dropped", %{owner: owner, document: document} do
     viewer = register_user()
-    Document.set_document_members!(document, [%{id: viewer.id, role: :viewer}], actor: owner)
+    Fixtures.share!(owner, document, viewer, :viewer)
 
     {:ok, _reply, socket} = join_as(viewer, document.id)
     push_edit(socket, "hello")
 
     assert saved_text(socket, document) == nil
+  end
+
+  # The DocServer has handled the change broadcast, and the channel the
+  # permission it was then sent.
+  defp sync(socket) do
+    _ = :sys.get_state(socket.assigns.doc_pid)
+    _ = :sys.get_state(socket.channel_pid)
+  end
+
+  test "an editor made viewer goes read-only at once", %{owner: owner, document: document} do
+    member = register_user()
+    Fixtures.share!(owner, document, member, :editor)
+    {:ok, _reply, socket} = join_as(member, document.id)
+
+    Fixtures.share!(owner, document, member, :viewer)
+    sync(socket)
+    push_edit(socket, "hello")
+
+    assert saved_text(socket, document) == nil
+  end
+
+  test "a member removed leaves the channel at once", %{owner: owner, document: document} do
+    member = register_user()
+    membership = Fixtures.share!(owner, document, member, :editor)
+    {:ok, _reply, socket} = join_as(member, document.id)
+    Process.unlink(socket.channel_pid)
+    ref = Process.monitor(socket.channel_pid)
+
+    :ok = Document.remove_member(owner, membership.id)
+
+    assert_receive {:DOWN, ^ref, :process, _pid, {:shutdown, :unauthorized}}
+  end
+
+  test "another member's change leaves the channel as it was",
+       %{owner: owner, document: document} do
+    editor = register_user()
+    Fixtures.share!(owner, document, editor, :editor)
+    {:ok, _reply, socket} = join_as(editor, document.id)
+
+    Fixtures.share!(owner, document, register_user(), :viewer)
+    sync(socket)
+    push_edit(socket, "hello")
+
+    assert saved_text(socket, document) == "hello"
   end
 end

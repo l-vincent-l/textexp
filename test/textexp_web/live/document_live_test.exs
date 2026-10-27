@@ -1,30 +1,15 @@
 defmodule TextexpWeb.DocumentLiveTest do
   use TextexpWeb.ConnCase
 
+  alias Textexp.Fixtures
+
   import Phoenix.LiveViewTest
 
   alias Textexp.Document
 
-  defp register_user do
-    Textexp.Accounts.User
-    |> Ash.Changeset.for_create(:register_with_password, %{
-      email: "live-#{System.unique_integer([:positive])}@example.com",
-      password: "a-long-password",
-      password_confirmation: "a-long-password"
-    })
-    |> Ash.create!(authorize?: false)
-  end
+  defp register_user, do: Fixtures.confirmed_user()
 
-  defp log_in(conn, user) do
-    conn
-    |> init_test_session(%{})
-    |> AshAuthentication.Plug.Helpers.store_in_session(user)
-  end
-
-  test "redirects anonymous visitors to the sign-in page", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/sign-in"}}} =
-             live(conn, ~p"/documents/#{Ash.UUID.generate()}")
-  end
+  defp log_in(conn, user), do: Fixtures.log_in(conn, user)
 
   describe "signed in" do
     setup %{conn: conn} do
@@ -33,7 +18,7 @@ defmodule TextexpWeb.DocumentLiveTest do
     end
 
     test "renaming updates the document and the sidebar", %{conn: conn, user: user} do
-      document = Document.create_document!(%{}, actor: user)
+      document = Fixtures.create_document!(user, %{})
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
 
       editor = "#document-editor-#{document.id}[phx-hook='DocumentEditor']"
@@ -44,12 +29,12 @@ defmodule TextexpWeb.DocumentLiveTest do
 
       view |> element("#title-form") |> render_change(%{"title" => "Mon document"})
 
-      assert Document.get_document!(document.id, authorize?: false).title == "Mon document"
+      assert Document.get_document!(document.id).title == "Mon document"
       assert has_element?(view, "#documents-#{document.id}", "Mon document")
     end
 
     test "shows content updates of the open document", %{conn: conn, user: user} do
-      document = Document.create_document!(%{}, actor: user)
+      document = Fixtures.create_document!(user, %{})
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
 
       Phoenix.PubSub.broadcast(
@@ -63,7 +48,7 @@ defmodule TextexpWeb.DocumentLiveTest do
 
     test "shows the title given by a save to an untitled document",
          %{conn: conn, user: user} do
-      document = Document.create_document!(%{}, actor: user)
+      document = Fixtures.create_document!(user, %{})
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
 
       Phoenix.PubSub.broadcast(
@@ -78,7 +63,7 @@ defmodule TextexpWeb.DocumentLiveTest do
     end
 
     test "a save does not replace the title being typed", %{conn: conn, user: user} do
-      document = Document.create_document!(%{}, actor: user)
+      document = Fixtures.create_document!(user, %{})
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
       view |> element("#title-form") |> render_change(%{"title" => "Mon titre"})
 
@@ -93,9 +78,9 @@ defmodule TextexpWeb.DocumentLiveTest do
     end
 
     test "lists the people viewing the document", %{conn: conn, user: user} do
-      document = Document.create_document!(%{}, actor: user)
+      document = Fixtures.create_document!(user, %{})
       other = register_user()
-      Document.set_document_members!(document, [%{id: other.id, role: :viewer}], actor: user)
+      Fixtures.share!(user, document, other, :viewer)
 
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
       {:ok, other_view, _html} = live(log_in(build_conn(), other), ~p"/documents/#{document.id}")
@@ -113,7 +98,7 @@ defmodule TextexpWeb.DocumentLiveTest do
     end
 
     test "the open document being deleted redirects to the list", %{conn: conn, user: user} do
-      document = Document.create_document!(%{}, actor: user)
+      document = Fixtures.create_document!(user, %{})
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
 
       Phoenix.PubSub.broadcast(
@@ -126,8 +111,8 @@ defmodule TextexpWeb.DocumentLiveTest do
     end
 
     test "a deleted empty document leaves the sidebar", %{conn: conn, user: user} do
-      document = Document.create_document!(%{title: "Notes"}, actor: user)
-      other = Document.create_document!(%{}, actor: user)
+      document = Fixtures.create_document!(user, %{title: "Notes"})
+      other = Fixtures.create_document!(user, %{})
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
       assert has_element?(view, "#documents-#{other.id}")
 
@@ -141,7 +126,7 @@ defmodule TextexpWeb.DocumentLiveTest do
     end
 
     test "creating a document from the sidebar opens it", %{conn: conn, user: user} do
-      document = Document.create_document!(%{title: "Notes"}, actor: user)
+      document = Fixtures.create_document!(user, %{title: "Notes"})
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
 
       view |> element("#new-document") |> render_click()
@@ -153,8 +138,8 @@ defmodule TextexpWeb.DocumentLiveTest do
 
     test "switching documents moves the editor, the active item and the viewer",
          %{conn: conn, user: user} do
-      first = Document.create_document!(%{title: "First"}, actor: user)
-      second = Document.create_document!(%{title: "Second"}, actor: user)
+      first = Fixtures.create_document!(user, %{title: "First"})
+      second = Fixtures.create_document!(user, %{title: "Second"})
       {:ok, view, _html} = live(conn, ~p"/documents/#{first.id}")
       assert [_] = TextexpWeb.Presence.list_users("viewers:#{first.id}")
 
@@ -171,11 +156,11 @@ defmodule TextexpWeb.DocumentLiveTest do
 
     test "an unknown document redirects to the list", %{conn: conn} do
       assert {:error, {:live_redirect, %{to: "/documents"}}} =
-               live(conn, ~p"/documents/#{Ash.UUID.generate()}")
+               live(conn, ~p"/documents/#{Ecto.UUID.generate()}")
     end
 
     test "another user's document redirects to the list", %{conn: conn} do
-      document = Document.create_document!(%{title: "Notes"}, actor: register_user())
+      document = Fixtures.create_document!(register_user(), %{title: "Notes"})
 
       assert {:error, {:live_redirect, %{to: "/documents"}}} =
                live(conn, ~p"/documents/#{document.id}")
@@ -183,34 +168,34 @@ defmodule TextexpWeb.DocumentLiveTest do
 
     test "an editor renames the document", %{conn: conn, user: user} do
       owner = register_user()
-      document = Document.create_document!(%{title: "Notes"}, actor: owner)
-      Document.set_document_members!(document, [%{id: user.id, role: :editor}], actor: owner)
+      document = Fixtures.create_document!(owner, %{title: "Notes"})
+      Fixtures.share!(owner, document, user, :editor)
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
 
       assert has_element?(view, "#document-editor-#{document.id}[data-editable='true']")
       view |> element("#title-form") |> render_change(%{"title" => "Mon document"})
 
-      assert Document.get_document!(document.id, authorize?: false).title == "Mon document"
+      assert Document.get_document!(document.id).title == "Mon document"
     end
 
     test "a viewer reads the document without editing it", %{conn: conn, user: user} do
       owner = register_user()
-      document = Document.create_document!(%{title: "Notes"}, actor: owner)
-      Document.set_document_members!(document, [%{id: user.id, role: :viewer}], actor: owner)
+      document = Fixtures.create_document!(owner, %{title: "Notes"})
+      Fixtures.share!(owner, document, user, :viewer)
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
 
       assert has_element?(view, "#document-title[readonly]")
       assert has_element?(view, "#document-editor-#{document.id}[data-editable='false']")
 
       view |> element("#title-form") |> render_change(%{"title" => "Mon document"})
-      assert Document.get_document!(document.id, authorize?: false).title == "Notes"
+      assert Document.get_document!(document.id).title == "Notes"
     end
   end
 
   describe "sharing" do
     setup %{conn: conn} do
       owner = register_user()
-      document = Document.create_document!(%{title: "Notes"}, actor: owner)
+      document = Fixtures.create_document!(owner, %{title: "Notes"})
       %{conn: log_in(conn, owner), owner: owner, document: document}
     end
 
@@ -229,8 +214,7 @@ defmodule TextexpWeb.DocumentLiveTest do
       assert has_element?(view, "#members li", to_string(editor.email))
       assert has_element?(view, "#members li", "Éditeur")
 
-      assert {:ok, document} = Document.get_document(document.id, actor: editor)
-      assert Ash.can?({document, :rename}, editor)
+      assert {:ok, %{role: :editor}} = Document.get_document(document.id, editor)
     end
 
     test "an address without account is refused", %{conn: conn, document: document} do
@@ -248,7 +232,7 @@ defmodule TextexpWeb.DocumentLiveTest do
 
     test "the owner removes a member", %{conn: conn, owner: owner, document: document} do
       viewer = register_user()
-      membership = Document.share_document!(document.id, viewer.email, :viewer, actor: owner)
+      membership = Fixtures.share!(owner, document, viewer, :viewer)
       {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
 
       view |> element("#share-button") |> render_click()
@@ -257,12 +241,32 @@ defmodule TextexpWeb.DocumentLiveTest do
       view |> element("#remove-#{membership.id}") |> render_click()
 
       refute has_element?(view, "#members-#{membership.id}")
-      assert {:error, _} = Document.get_document(document.id, actor: viewer)
+      assert {:error, _} = Document.get_document(document.id, viewer)
+    end
+
+    test "a member removed is sent back to the list", %{owner: owner, document: document} do
+      viewer = register_user()
+      membership = Fixtures.share!(owner, document, viewer, :viewer)
+      {:ok, view, _html} = live(log_in(build_conn(), viewer), ~p"/documents/#{document.id}")
+
+      :ok = Document.remove_member(owner, membership.id)
+
+      assert_redirect(view, ~p"/documents")
+    end
+
+    test "a member whose role changes gets the page again", %{owner: owner, document: document} do
+      member = register_user()
+      Fixtures.share!(owner, document, member, :viewer)
+      {:ok, view, _html} = live(log_in(build_conn(), member), ~p"/documents/#{document.id}")
+
+      Fixtures.share!(owner, document, member, :editor)
+
+      assert_redirect(view, ~p"/documents/#{document.id}")
     end
 
     test "members do not see the share button", %{owner: owner, document: document} do
       editor = register_user()
-      Document.share_document!(document.id, editor.email, :editor, actor: owner)
+      Fixtures.share!(owner, document, editor, :editor)
       {:ok, view, _html} = live(log_in(build_conn(), editor), ~p"/documents/#{document.id}")
 
       refute has_element?(view, "#share-button")

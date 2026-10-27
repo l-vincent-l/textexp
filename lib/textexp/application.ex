@@ -22,8 +22,7 @@ defmodule Textexp.Application do
       # Start a worker by calling: Textexp.Worker.start_link(arg)
       # {Textexp.Worker, arg},
       # Start to serve requests, typically the last entry
-      TextexpWeb.Endpoint,
-      {AshAuthentication.Supervisor, [otp_app: :textexp]}
+      TextexpWeb.Endpoint
     ]
 
     # See https://elixir.hexdocs.pm/Supervisor.html

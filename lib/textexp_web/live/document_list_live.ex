@@ -97,10 +97,7 @@ defmodule TextexpWeb.DocumentListLive do
             {if @searching?, do: "Aucun résultat", else: "Aucun document"}
           </li>
           <li :for={{id, document} <- @streams.documents} id={id}>
-            <.document_card
-              document={document}
-              snippet={Ash.Resource.get_metadata(document, :snippet)}
-            />
+            <.document_card document={document} snippet={document.snippet} />
           </li>
         </ul>
       </div>
@@ -130,7 +127,7 @@ defmodule TextexpWeb.DocumentListLive do
   end
 
   def handle_event("new_document", _params, socket) do
-    document = Document.create_document!(%{}, actor: socket.assigns.current_user)
+    {:ok, document} = Document.create_document(socket.assigns.current_user)
     {:noreply, push_navigate(socket, to: ~p"/documents/#{document.id}")}
   end
 
@@ -140,10 +137,7 @@ defmodule TextexpWeb.DocumentListLive do
 
     with {:ok, snapshot} <- Base.decode64(state),
          {:ok, document} <-
-           Document.import_document(title, snapshot,
-             load: [:last_update],
-             actor: socket.assigns.current_user
-           ) do
+           Document.import_document(socket.assigns.current_user, title, snapshot) do
       {:reply, %{id: document.id},
        socket
        |> stream_insert(:documents, document, at: 0)
@@ -223,11 +217,5 @@ defmodule TextexpWeb.DocumentListLive do
     end
   end
 
-  defp list_documents(user) do
-    Document.list_documents!(
-      query: [select: [:title, :excerpt, :updated_at], sort: [last_update: :desc]],
-      load: [:last_update],
-      actor: user
-    )
-  end
+  defp list_documents(user), do: Document.list_documents(user)
 end

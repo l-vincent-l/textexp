@@ -3,7 +3,7 @@ defmodule TextexpWeb.DocumentLive do
 
   alias Textexp.Accounts
   alias Textexp.Document
-  alias Textexp.Document.YPersistence
+  alias Textexp.Document.{Policy, YPersistence}
   alias TextexpWeb.Presence
 
   on_mount {TextexpWeb.LiveUserAuth, :live_user_required}
@@ -253,11 +253,7 @@ defmodule TextexpWeb.DocumentLive do
       Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.documents_topic())
     end
 
-    documents =
-      Document.list_documents!(
-        query: [select: [:title], sort: [last_update: :desc]],
-        actor: socket.assigns.current_user
-      )
+    documents = Document.list_documents(socket.assigns.current_user)
 
     {:ok,
      socket
@@ -279,7 +275,7 @@ defmodule TextexpWeb.DocumentLive do
     do: {:noreply, socket}
 
   def handle_params(%{"id" => id}, _uri, socket) do
-    case Document.get_document(id, load: [:last_update], actor: socket.assigns.current_user) do
+    case Document.get_document(id, socket.assigns.current_user) do
       {:ok, document} ->
         previous = socket.assigns.document
 
@@ -302,6 +298,7 @@ defmodule TextexpWeb.DocumentLive do
   defp open_document(socket, document) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Textexp.PubSub, YPersistence.topic(document.id))
+      Phoenix.PubSub.subscribe(Textexp.PubSub, Document.members_topic(document.id))
 
       user = socket.assigns.current_user
       Presence.subscribe(viewers_topic(document.id))
@@ -311,13 +308,11 @@ defmodule TextexpWeb.DocumentLive do
     socket
     |> assign(
       document: document,
-      # Viewers read the document without editing it (see YDocRoomChannel).
-      can_edit?: Ash.can?({document, :save_snapshot}, socket.assigns.current_user),
-      # Only the owner shares the document (see Membership).
-      can_share?: Ash.can?({document, :set_members}, socket.assigns.current_user),
+      can_edit?: Policy.can?(document.role, :write),
+      can_share?: Policy.can?(document.role, :share),
       sharing?: false,
       page_title: document.title || "Sans titre",
-      last_update: document.last_update,
+      last_update: document.updated_at,
       title_form: to_form(%{"title" => document.title})
     )
     |> stream(:viewers, if(connected?(socket), do: viewers(document.id), else: []), reset: true)
@@ -330,6 +325,7 @@ defmodule TextexpWeb.DocumentLive do
 
     if connected?(socket) do
       Phoenix.PubSub.unsubscribe(Textexp.PubSub, YPersistence.topic(document_id))
+      Phoenix.PubSub.unsubscribe(Textexp.PubSub, Document.members_topic(document_id))
       Presence.unsubscribe(viewers_topic(document_id))
       Presence.untrack_user(viewers_topic(document_id), socket.assigns.current_user.id)
     end
@@ -368,6 +364,30 @@ defmodule TextexpWeb.DocumentLive do
     end
   end
 
+  # The user's role on the open document changed: the page is opened again
+  # with it, the editor along (its channel already applies it, see
+  # YDocRoomChannel). Without access, back to the list.
+  def handle_info({:member_changed, document_id, user_id, role}, socket) do
+    %{document: document, current_user: user} = socket.assigns
+
+    cond do
+      document.id != document_id or user.id != user_id ->
+        {:noreply, socket}
+
+      is_nil(role) ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Votre accès à ce document a été retiré")
+         |> push_navigate(to: ~p"/documents")}
+
+      true ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Vos droits sur ce document ont changé")
+         |> push_navigate(to: ~p"/documents/#{document.id}")}
+    end
+  end
+
   # May still arrive for a document just left: the viewers of the open one are
   # listed again.
   def handle_info({Presence, {event, _user}}, socket) when event in [:join, :leave] do
@@ -398,7 +418,7 @@ defmodule TextexpWeb.DocumentLive do
   end
 
   def handle_event("new_document", _params, socket) do
-    document = Document.create_document!(%{}, actor: socket.assigns.current_user)
+    {:ok, document} = Document.create_document(socket.assigns.current_user)
 
     {:noreply,
      socket
@@ -408,7 +428,7 @@ defmodule TextexpWeb.DocumentLive do
 
   def handle_event("resolve_users", %{"ids" => ids}, socket) do
     users =
-      for user <- Accounts.list_users_by_ids!(ids, actor: socket.assigns.current_user) do
+      for user <- Accounts.list_users_by_ids(ids) do
         %{id: user.id, username: to_string(user.email), avatarUrl: ""}
       end
 
@@ -421,41 +441,36 @@ defmodule TextexpWeb.DocumentLive do
   def handle_event("toggle_share", _params, socket) do
     {:noreply,
      socket
-     |> assign(sharing?: true, share_form: share_form(socket))
+     |> assign(sharing?: true, share_form: share_form())
      |> stream(:members, members(socket), reset: true)}
   end
 
   def handle_event("share", %{"share" => params}, socket) do
-    case AshPhoenix.Form.submit(socket.assigns.share_form, params: params) do
-      {:ok, membership} ->
-        [member] = members(socket, [membership])
-
+    case Document.share_document(socket.assigns.current_user, socket.assigns.document.id, params) do
+      {:ok, member} ->
         {:noreply,
          socket
-         |> assign(share_form: share_form(socket))
+         |> assign(share_form: share_form())
          |> stream_insert(:members, member)
          |> put_flash(:info, "Document partagé avec #{member.email}")}
 
-      {:error, form} ->
-        {:noreply, assign(socket, share_form: to_form(form))}
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, share_form: to_form(changeset, as: "share"))}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Vous ne pouvez pas partager ce document")}
     end
   end
 
   def handle_event("remove_member", %{"id" => id}, socket) do
-    user = socket.assigns.current_user
-
-    with {:ok, membership} <- Ash.get(Document.Membership, id, actor: user),
-         :ok <- Document.remove_document_member(membership, actor: user) do
-      {:noreply, stream_delete_by_dom_id(socket, :members, "members-#{id}")}
-    else
+    case Document.remove_member(socket.assigns.current_user, id) do
+      :ok -> {:noreply, stream_delete_by_dom_id(socket, :members, "members-#{id}")}
       _ -> {:noreply, put_flash(socket, :error, "Impossible de retirer ce membre")}
     end
   end
 
   def handle_event("update_title", %{"title" => title}, socket) do
-    case Document.rename_document(socket.assigns.document, title,
-           actor: socket.assigns.current_user
-         ) do
+    case Document.rename_document(socket.assigns.document, socket.assigns.current_user, title) do
       {:ok, document} ->
         {:noreply, put_title(socket, document)}
 
@@ -475,36 +490,9 @@ defmodule TextexpWeb.DocumentLive do
   end
 
   # The form inviting an address to the open document.
-  defp share_form(socket) do
-    document_id = socket.assigns.document.id
+  defp share_form, do: to_form(Document.change_share(%{role: :viewer}), as: "share")
 
-    Document.Membership
-    |> AshPhoenix.Form.for_create(:share,
-      as: "share",
-      actor: socket.assigns.current_user,
-      params: %{"role" => "viewer"},
-      transform_params: fn _form, params, _action ->
-        Map.put(params, "document_id", document_id)
-      end
-    )
-    |> to_form()
-  end
-
-  # The members of the open document (or `memberships` of it), with their email.
-  defp members(socket, memberships \\ nil) do
-    user = socket.assigns.current_user
-
-    memberships =
-      memberships || Document.list_document_members!(socket.assigns.document.id, actor: user)
-
-    emails =
-      memberships
-      |> Enum.map(& &1.user_id)
-      |> Accounts.list_users_by_ids!(actor: user)
-      |> Map.new(&{&1.id, to_string(&1.email)})
-
-    memberships
-    |> Enum.map(&%{id: &1.id, email: emails[&1.user_id], role: &1.role})
-    |> Enum.sort_by(& &1.email)
-  end
+  # The members of the open document, by email.
+  defp members(socket),
+    do: Document.list_members(socket.assigns.current_user, socket.assigns.document.id)
 end

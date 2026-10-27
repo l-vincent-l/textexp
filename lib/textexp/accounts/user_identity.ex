@@ -4,22 +4,16 @@ defmodule Textexp.Accounts.UserIdentity do
   identifier of the account (`uid`, for the `strategy`) and its OAuth tokens.
   A returning user is recognised by it, not by their email address.
   """
-  use Ash.Resource,
-    otp_app: :textexp,
-    domain: Textexp.Accounts,
-    data_layer: AshSqlite.DataLayer,
-    extensions: [AshAuthentication.UserIdentity]
+  use Ecto.Schema
 
-  sqlite do
-    table "user_identities"
-    repo Textexp.SqliteRepo
-
-    references do
-      reference :user, on_delete: :delete
-    end
-  end
-
-  user_identity do
-    user_resource Textexp.Accounts.User
+  @primary_key {:id, :binary_id, autogenerate: true}
+  @foreign_key_type :binary_id
+  schema "user_identities" do
+    field :strategy, :string
+    field :uid, :string
+    field :access_token, :string, redact: true
+    field :access_token_expires_at, :utc_datetime_usec
+    field :refresh_token, :string, redact: true
+    belongs_to :user, Textexp.Accounts.User
   end
 end

@@ -1,15 +1,12 @@
 defmodule YPhoenix.Channel do
   @moduledoc """
   Functions for a Phoenix channel that syncs a Yjs document with a
-  `YPhoenix.DocServer`. The app's channel handles authorization and delegates
-  the rest:
+  `YPhoenix.DocServer`. The app's channel gives the actor joining, whose
+  permission the DocServer gives (see `YPhoenix.Access`), and delegates the
+  rest:
 
       def join("y_doc_room:" <> doc_name = topic, _payload, socket) do
-        if authorized?(socket, doc_name) do
-          YPhoenix.Channel.join(socket, topic, doc_name, @doc_server_opts)
-        else
-          {:error, %{reason: "unauthorized"}}
-        end
+        YPhoenix.Channel.join(socket, topic, doc_name, socket.assigns.current_user, @doc_server_opts)
       end
 
       def handle_in(event, payload, socket), do: YPhoenix.Channel.handle_in(event, payload, socket)
@@ -20,9 +17,9 @@ defmodule YPhoenix.Channel do
     * `:supervisor` - `DynamicSupervisor` under which DocServers are started;
     * `:registry_scope` - `:syn` scope in which DocServers are registered by
       document name, so there is only one per document in the cluster;
-    * `:read_only` - when `true`, the client receives the document and its
-      updates, and shares its awareness (cursor, presence), but the updates it
-      sends are dropped (default `false`).
+  A client with the `:read` permission receives the document and its updates,
+  and shares its awareness (cursor, presence), but the updates it sends are
+  dropped. A client whose access is removed leaves the channel.
   """
 
   require Logger
@@ -32,26 +29,32 @@ defmodule YPhoenix.Channel do
 
   alias YPhoenix.DocServer
 
-  def join(socket, topic, doc_name, opts) do
-    {read_only?, opts} = Keyword.pop(opts, :read_only, false)
-    uid = "#{node()}_#{System.unique_integer()}"
+  def join(socket, topic, doc_name, actor, opts) do
+    with {:ok, docpid, permission} <- start_and_join(topic, doc_name, actor, opts) do
+      uid = "#{node()}_#{System.unique_integer()}"
+      Keyword.fetch!(opts, :presence).track_user(topic, uid, %{})
 
-    Keyword.fetch!(opts, :presence).track_user(topic, uid, %{})
+      {:ok,
+       assign(socket,
+         doc_name: doc_name,
+         doc_pid: docpid,
+         doc_server_opts: opts,
+         actor: actor,
+         read_only?: permission == :read
+       )}
+    end
+  end
 
-    case start_doc_server(topic, doc_name, opts) do
-      {:ok, docpid} ->
-        Process.monitor(docpid)
+  defp start_and_join(topic, doc_name, actor, opts) do
+    with {:ok, docpid} <- start_doc_server(topic, doc_name, opts) do
+      case DocServer.join(docpid, actor) do
+        {:ok, permission} ->
+          Process.monitor(docpid)
+          {:ok, docpid, permission}
 
-        {:ok,
-         assign(socket,
-           doc_name: doc_name,
-           doc_pid: docpid,
-           doc_server_opts: opts,
-           read_only?: read_only?
-         )}
-
-      {:error, reason} ->
-        {:error, reason}
+        {:error, :unauthorized} ->
+          {:error, %{reason: "unauthorized"}}
+      end
     end
   end
 
@@ -92,6 +95,12 @@ defmodule YPhoenix.Channel do
     end
   end
 
+  def handle_info({DocServer, :permission, :none}, socket),
+    do: {:stop, {:shutdown, :unauthorized}, socket}
+
+  def handle_info({DocServer, :permission, permission}, socket),
+    do: {:noreply, assign(socket, read_only?: permission == :read)}
+
   def handle_info({:yjs, message, _proc}, socket) do
     push(socket, "yjs", {:binary, message})
     {:noreply, socket}
@@ -101,12 +110,15 @@ defmodule YPhoenix.Channel do
         {:DOWN, _ref, :process, pid, _reason},
         %{assigns: %{doc_pid: pid, doc_name: doc_name, doc_server_opts: opts}} = socket
       ) do
-    # Only handle :DOWN for the current doc_pid
-    case start_doc_server(socket.topic, doc_name, opts) do
-      {:ok, docpid} ->
-        Process.monitor(docpid)
+    # Only handle :DOWN for the current doc_pid. The new DocServer loads the
+    # rights again, which may have changed.
+    case start_and_join(socket.topic, doc_name, socket.assigns.actor, opts) do
+      {:ok, docpid, permission} ->
         push(socket, "yjs_resync", %{})
-        {:noreply, assign(socket, doc_pid: docpid)}
+        {:noreply, assign(socket, doc_pid: docpid, read_only?: permission == :read)}
+
+      {:error, %{reason: "unauthorized"}} ->
+        {:stop, {:shutdown, :unauthorized}, socket}
 
       {:error, reason} ->
         push(socket, "yjs_server_down", %{})
@@ -143,6 +155,9 @@ defmodule YPhoenix.Channel do
 
       {:error, {:already_started, pid}} ->
         {:ok, pid}
+
+      {:error, :not_found} ->
+        {:error, %{reason: "unauthorized"}}
 
       {:error, reason} ->
         Logger.error("""

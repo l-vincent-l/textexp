@@ -20,10 +20,9 @@ defmodule Textexp.Document.YPersistence do
   Updates applied on load use the `YPhoenix.Persistence.origin/0` origin,
   which the DocServer ignores.
 
-  Its operations bypass authorization: the DocServer is shared by all the
-  document's clients and saves on its own (timer, shutdown), so there is no
-  actor. Access is checked when joining the document's channel (see
-  `TextexpWeb.YDocRoomChannel`).
+  Its operations are done without user: the DocServer is shared by all the
+  document's clients and saves on its own (timer, shutdown). It checks the
+  rights of the clients joining it (see `Textexp.Document.Access`).
   """
   @behaviour YPhoenix.Persistence
 
@@ -34,7 +33,6 @@ defmodule Textexp.Document.YPersistence do
 
   @origin YPhoenix.Persistence.origin()
   @slow_ms 200
-  @system [authorize?: false]
 
   @doc """
   PubSub topic on which `{:document_updated, document_id, at, title}` is
@@ -51,7 +49,7 @@ defmodule Textexp.Document.YPersistence do
 
   @impl true
   def bind(state, document_id, doc) do
-    document = timed(:load, document_id, fn -> Document.get_document!(document_id, @system) end)
+    document = timed(:load, document_id, fn -> Document.get_document!(document_id) end)
 
     if document.snapshot do
       Yex.Doc.transaction(doc, @origin, fn -> Yex.apply_update(doc, document.snapshot) end)
@@ -62,10 +60,10 @@ defmodule Textexp.Document.YPersistence do
 
   @impl true
   def unbind(state, document_id, doc) do
-    document = Document.get_document!(document_id, @system)
+    document = Document.get_document!(document_id)
 
     if blank?(document.title) and Body.empty?(doc) do
-      timed(:delete, document_id, fn -> Document.destroy_document!(document, @system) end)
+      timed(:delete, document_id, fn -> Document.delete_document(document_id) end)
 
       Phoenix.PubSub.broadcast(
         Textexp.PubSub,
@@ -84,7 +82,7 @@ defmodule Textexp.Document.YPersistence do
     state = Map.put(state, :dirty, true)
 
     # The first text of an untitled document is saved at once, which gives it
-    # a title (see the save_snapshot action) without waiting for the next
+    # a title (see Document.save_snapshot/3) without waiting for the next
     # flush.
     if state[:untitled?] and Body.excerpt(doc) != nil do
       state |> flush(document_id, doc) |> Map.put(:untitled?, false)
@@ -105,9 +103,7 @@ defmodule Textexp.Document.YPersistence do
 
     document =
       timed(:save, document_id, fn ->
-        document_id
-        |> Document.get_document!(@system)
-        |> Document.save_snapshot!(snapshot, %{excerpt: Body.excerpt(doc)}, @system)
+        Document.save_snapshot(document_id, snapshot, Body.excerpt(doc))
       end)
 
     Phoenix.PubSub.broadcast(

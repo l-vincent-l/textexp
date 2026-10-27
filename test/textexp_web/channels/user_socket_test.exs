@@ -1,30 +1,18 @@
 defmodule TextexpWeb.UserSocketTest do
   use Textexp.DataCase
 
+  alias Textexp.Fixtures
+
   import Phoenix.ChannelTest
-  import Phoenix.ConnTest, only: [build_conn: 0, init_test_session: 2]
-  import Plug.Conn, only: [get_session: 1]
 
   @endpoint TextexpWeb.Endpoint
 
   alias TextexpWeb.UserSocket
 
-  defp register_user do
-    Textexp.Accounts.User
-    |> Ash.Changeset.for_create(:register_with_password, %{
-      email: "socket-#{System.unique_integer([:positive])}@example.com",
-      password: "a-long-password",
-      password_confirmation: "a-long-password"
-    })
-    |> Ash.create!(authorize?: false)
-  end
+  defp register_user, do: Fixtures.register_user()
 
-  defp session_for(user) do
-    build_conn()
-    |> init_test_session(%{})
-    |> AshAuthentication.Plug.Helpers.store_in_session(user)
-    |> get_session()
-  end
+  defp session_for(user),
+    do: %{"user_token" => Textexp.Accounts.generate_user_session_token(user)}
 
   test "refuses a connection without a signed-in user" do
     assert :error = connect(UserSocket, %{}, connect_info: %{session: %{}})

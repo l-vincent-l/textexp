@@ -1,17 +1,11 @@
 defmodule Textexp.Document.MarkdownTest do
   use Textexp.DataCase
 
+  alias Textexp.Fixtures
+
   alias Textexp.Document
 
-  defp register_user do
-    Textexp.Accounts.User
-    |> Ash.Changeset.for_create(:register_with_password, %{
-      email: "markdown-#{System.unique_integer([:positive])}@example.com",
-      password: "a-long-password",
-      password_confirmation: "a-long-password"
-    })
-    |> Ash.create!(authorize?: false)
-  end
+  defp register_user, do: Fixtures.register_user()
 
   defp snapshot(text) do
     doc = Yex.Doc.new()
@@ -34,18 +28,15 @@ defmodule Textexp.Document.MarkdownTest do
   end
 
   test "is the body of the saved snapshot", %{user: user} do
-    document =
-      %{title: "Notes"}
-      |> Document.create_document!(actor: user)
-      |> Document.save_snapshot!(snapshot("Hello"), authorize?: false)
+    document = Fixtures.create_document!(user, %{title: "Notes"})
+    Document.save_snapshot(document.id, snapshot("Hello"), "Hello")
 
-    assert Document.document_markdown!(document) == "Hello"
-    assert [%{markdown: "Hello"}] = Document.list_documents!(load: [:markdown], authorize?: false)
+    assert document.id |> Document.get_document!() |> Document.markdown() == "Hello"
   end
 
   test "is empty without snapshot", %{user: user} do
-    document = Document.create_document!(%{title: "Notes"}, actor: user)
+    document = Fixtures.create_document!(user, %{title: "Notes"})
 
-    assert Document.document_markdown!(document) == ""
+    assert Document.markdown(document) == ""
   end
 end

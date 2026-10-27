@@ -1,9 +1,7 @@
 defmodule TextexpWeb.Router do
   use TextexpWeb, :router
 
-  use AshAuthentication.Phoenix.Router
-
-  import AshAuthentication.Plug.Helpers
+  import TextexpWeb.UserAuth, only: [fetch_current_user: 2]
 
   pipeline :browser do
     plug :accepts, ["html"]
@@ -12,33 +10,18 @@ defmodule TextexpWeb.Router do
     plug :put_root_layout, html: {TextexpWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
-    plug :load_from_session
+    plug :fetch_current_user
   end
 
   pipeline :dashboard do
     plug :dashboard_auth
   end
 
-  pipeline :api do
-    plug :accepts, ["json"]
-    plug :load_from_bearer
-    plug :set_actor, :user
-  end
-
   scope "/", TextexpWeb do
     pipe_through :browser
 
-    ash_authentication_live_session :authenticated_routes do
-      # in each liveview, add one of the following at the top of the module:
-      #
-      # If an authenticated user must be present:
-      # on_mount {TextexpWeb.LiveUserAuth, :live_user_required}
-      #
-      # If an authenticated user *may* be present:
-      # on_mount {TextexpWeb.LiveUserAuth, :live_user_optional}
-      #
-      # If an authenticated user must *not* be present:
-      # on_mount {TextexpWeb.LiveUserAuth, :live_no_user}
+    # Each LiveView requires a signed-in user (see LiveUserAuth).
+    live_session :authenticated_routes, on_mount: [{TextexpWeb.LiveUserAuth, :current_user}] do
       live "/documents", DocumentListLive, :index
       live "/documents/:id", DocumentLive, :show
     end
@@ -48,41 +31,26 @@ defmodule TextexpWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
-    auth_routes AuthController, Textexp.Accounts.User, path: "/auth"
 
-    sign_out_route AuthController, "/sign-out",
-      overrides: [TextexpWeb.AuthOverrides, AshAuthentication.Phoenix.Overrides.DaisyUI]
+    get "/sign-in", AuthController, :sign_in
+    post "/sign-in", AuthController, :create_session
+    get "/register", AuthController, :register
+    post "/register", AuthController, :create_user
+    post "/magic-link", AuthController, :request_magic_link
+    get "/magic_link/:token", AuthController, :magic_link
+    post "/magic_link/:token", AuthController, :sign_in_with_magic_link
+    get "/reset", AuthController, :reset
+    post "/reset", AuthController, :request_reset
+    get "/password-reset/:token", AuthController, :edit_password
+    post "/password-reset/:token", AuthController, :reset_password
+    get "/confirm_new_user/:token", AuthController, :confirm
+    post "/confirm_new_user/:token", AuthController, :confirm_user
+    delete "/sign-out", AuthController, :sign_out
 
-    # Remove these if you'd like to use your own authentication views
-    sign_in_route register_path: "/register",
-                  reset_path: "/reset",
-                  auth_routes_prefix: "/auth",
-                  on_mount: [{TextexpWeb.LiveUserAuth, :live_no_user}],
-                  overrides: [
-                    TextexpWeb.AuthOverrides,
-                    AshAuthentication.Phoenix.Overrides.DaisyUI
-                  ]
-
-    # Remove this if you do not want to use the reset password feature
-    reset_route auth_routes_prefix: "/auth",
-                overrides: [TextexpWeb.AuthOverrides, AshAuthentication.Phoenix.Overrides.DaisyUI]
-
-    # Remove this if you do not use the confirmation strategy
-    confirm_route Textexp.Accounts.User, :confirm_new_user,
-      auth_routes_prefix: "/auth",
-      overrides: [TextexpWeb.AuthOverrides, AshAuthentication.Phoenix.Overrides.DaisyUI]
-
-    # Remove this if you do not use the magic link strategy.
-    magic_sign_in_route(Textexp.Accounts.User, :magic_link,
-      auth_routes_prefix: "/auth",
-      overrides: [TextexpWeb.AuthOverrides, AshAuthentication.Phoenix.Overrides.DaisyUI]
-    )
+    # The callback URLs of the OAuth applications on GitHub and GitLab.
+    get "/auth/user/:provider", OAuthController, :authorize
+    get "/auth/user/:provider/callback", OAuthController, :callback
   end
-
-  # Other scopes may use custom stacks.
-  # scope "/api", TextexpWeb do
-  #   pipe_through :api
-  # end
 
   # The LiveDashboard, also in production to look into the running app (memory,
   # processes), behind HTTP basic auth (see dashboard_auth/2).
@@ -100,16 +68,6 @@ defmodule TextexpWeb.Router do
       pipe_through :browser
 
       forward "/mailbox", Plug.Swoosh.MailboxPreview
-    end
-  end
-
-  if Application.compile_env(:textexp, :dev_routes) do
-    import AshAdmin.Router
-
-    scope "/admin" do
-      pipe_through :browser
-
-      ash_admin "/"
     end
   end
 

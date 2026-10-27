@@ -5,6 +5,7 @@ defmodule TextexpWeb.YDocRoomChannel do
     endpoint: TextexpWeb.Endpoint,
     persistence: Textexp.Document.YPersistence,
     presence: TextexpWeb.Presence,
+    access: Textexp.Document.Access,
     supervisor: TextexpWeb.DocServerSupervisor,
     registry_scope: :doc_servers
   ]
@@ -12,19 +13,13 @@ defmodule TextexpWeb.YDocRoomChannel do
   @doc "Options passed to `YPhoenix.Channel` and `YPhoenix.DocServer`."
   def doc_server_opts, do: @doc_server_opts
 
-  # Users can join the documents they can read (owner and members), and edit
-  # those they can save (owner and editors); viewers join read-only. The rights
-  # are those of the policies of Textexp.Document.Document, checked once on
-  # join: a role removed meanwhile only applies on the next join.
+  # The document's DocServer gives the user's permission (see
+  # Textexp.Document.Access): owner and editors edit, viewers join read-only.
+  # A role changed while joined applies at once: an editor made viewer goes
+  # read-only, a member removed leaves.
   @impl true
   def join("y_doc_room:" <> doc_name = topic, _payload, socket) do
-    with %{} = user <- socket.assigns[:current_user],
-         {:ok, document} <- Textexp.Document.get_document(doc_name, actor: user) do
-      read_only? = not Ash.can?({document, :save_snapshot}, user)
-      YPhoenix.Channel.join(socket, topic, doc_name, [read_only: read_only?] ++ @doc_server_opts)
-    else
-      _ -> {:error, %{reason: "unauthorized"}}
-    end
+    YPhoenix.Channel.join(socket, topic, doc_name, socket.assigns.current_user, @doc_server_opts)
   end
 
   @impl true

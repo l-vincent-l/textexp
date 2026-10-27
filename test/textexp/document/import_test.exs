@@ -1,17 +1,11 @@
 defmodule Textexp.Document.ImportTest do
   use Textexp.DataCase
 
+  alias Textexp.Fixtures
+
   alias Textexp.Document
 
-  defp register_user do
-    Textexp.Accounts.User
-    |> Ash.Changeset.for_create(:register_with_password, %{
-      email: "import-#{System.unique_integer([:positive])}@example.com",
-      password: "a-long-password",
-      password_confirmation: "a-long-password"
-    })
-    |> Ash.create!(authorize?: false)
-  end
+  defp register_user, do: Fixtures.register_user()
 
   # The Yjs state of a BlockNote document holding one paragraph.
   defp state(text) do
@@ -35,27 +29,23 @@ defmodule Textexp.Document.ImportTest do
   end
 
   test "creates the document with its content and excerpt", %{user: user} do
-    assert {:ok, document} = Document.import_document("Recette", state("Des crêpes"), actor: user)
+    assert {:ok, document} = Document.import_document(user, "Recette", state("Des crêpes"))
 
     assert document.title == "Recette"
     assert document.owner_id == user.id
     assert document.excerpt == "Des crêpes"
-    assert Document.document_markdown!(document) == "Des crêpes"
+    assert Document.markdown(document) == "Des crêpes"
   end
 
   test "refuses a state that is not Yjs", %{user: user} do
-    assert {:error, error} = Document.import_document("Bad", <<1, 2, 3>>, actor: user)
-    assert Exception.message(error) =~ "contenu illisible"
+    assert {:error, changeset} = Document.import_document(user, "Bad", <<1, 2, 3>>)
+    assert "contenu illisible" in errors_on(changeset).snapshot
   end
 
   test "refuses a too large state", %{user: user} do
-    assert {:error, error} =
-             Document.import_document("Big", :binary.copy("x", 5_000_001), actor: user)
+    assert {:error, changeset} =
+             Document.import_document(user, "Big", :binary.copy("x", 5_000_001))
 
-    assert Exception.message(error) =~ "trop volumineux"
-  end
-
-  test "needs an actor, the document's owner" do
-    assert {:error, _} = Document.import_document("Recette", state("x"))
+    assert "contenu trop volumineux" in errors_on(changeset).snapshot
   end
 end

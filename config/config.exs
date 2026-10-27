@@ -7,57 +7,6 @@
 # General application configuration
 import Config
 
-# These enable behaviors that will become the default in the next major
-# version of Ash. Setting them now opts your application into the new
-# behavior and ensures a seamless upgrade. See the backwards compatibility
-# guide for an explanation of each setting:
-# https://hexdocs.pm/ash/backwards-compatibility-config.html
-config :ash,
-  allow_forbidden_field_for_relationships_by_default: true,
-  include_embedded_source_by_default?: false,
-  show_keysets_for_all_actions?: false,
-  default_page_type: :keyset,
-  policies: [no_filter_static_forbidden_reads?: false],
-  keep_read_action_loads_when_loading?: false,
-  default_actions_require_atomic?: true,
-  read_action_after_action_hooks_in_order?: true,
-  bulk_actions_default_to_errors?: true,
-  transaction_rollback_on_error?: true,
-  redact_sensitive_values_in_errors?: true,
-  default_string_length_count: :codepoints,
-  many_to_many_destroy_destination_on_match?: true
-
-config :spark,
-  formatter: [
-    remove_parens?: true,
-    "Ash.Resource": [
-      section_order: [
-        :authentication,
-        :token,
-        :user_identity,
-        :admin,
-        :postgres,
-        :resource,
-        :code_interface,
-        :actions,
-        :policies,
-        :pub_sub,
-        :preparations,
-        :changes,
-        :validations,
-        :multitenancy,
-        :attributes,
-        :relationships,
-        :calculations,
-        :aggregates,
-        :identities
-      ]
-    ],
-    "Ash.Domain": [
-      section_order: [:admin, :resources, :policies, :authorization, :domain, :execution]
-    ]
-  ]
-
 # The database: a local SQLite file by default, or a libSQL server (Bunny
 # Database) with DATABASE_ADAPTER=hrana. Chosen at compile time, as the repo's
 # adapter (after changing it: `mix compile --force`); config/runtime.exs reads
@@ -71,9 +20,7 @@ config :textexp,
 
 config :textexp,
   ecto_repos: [Textexp.SqliteRepo],
-  generators: [timestamp_type: :utc_datetime],
-  ash_domains: [Textexp.Document, Textexp.Accounts],
-  ash_authentication: [return_error_on_invalid_magic_link_token?: true]
+  generators: [timestamp_type: :utc_datetime]
 
 # Configure the endpoint
 config :textexp, TextexpWeb.Endpoint,

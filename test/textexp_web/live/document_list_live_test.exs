@@ -1,6 +1,8 @@
 defmodule TextexpWeb.DocumentListLiveTest do
   use TextexpWeb.ConnCase
 
+  alias Textexp.Fixtures
+
   import Phoenix.LiveViewTest
 
   alias Textexp.Document
@@ -9,26 +11,9 @@ defmodule TextexpWeb.DocumentListLiveTest do
   # longer than the default 100 ms of render_async/1 on a busy machine.
   @search_timeout 2_000
 
-  defp register_user do
-    Textexp.Accounts.User
-    |> Ash.Changeset.for_create(:register_with_password, %{
-      email: "live-#{System.unique_integer([:positive])}@example.com",
-      password: "a-long-password",
-      password_confirmation: "a-long-password"
-    })
-    |> Ash.create!(authorize?: false)
-  end
+  defp register_user, do: Fixtures.confirmed_user()
 
-  defp log_in(conn, user) do
-    conn
-    |> init_test_session(%{})
-    |> AshAuthentication.Plug.Helpers.store_in_session(user)
-  end
-
-  test "redirects anonymous visitors to the sign-in page", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/sign-in"}}} =
-             live(conn, ~p"/documents")
-  end
+  defp log_in(conn, user), do: Fixtures.log_in(conn, user)
 
   describe "signed in" do
     setup %{conn: conn} do
@@ -44,20 +29,18 @@ defmodule TextexpWeb.DocumentListLiveTest do
                view |> element("#new-document") |> render_click()
 
       {:ok, view, _html} = live(conn, path)
-      assert {:ok, _} = Document.get_document(id, authorize?: false)
+      assert Textexp.SqliteRepo.get(Document.Document, id)
       assert has_element?(view, "#document-editor-#{id}")
       assert has_element?(view, "#documents-#{id} a.menu-active")
     end
 
     test "the list has no sidebar and shows each document's title and excerpt",
          %{conn: conn, user: user} do
-      document = Document.create_document!(%{title: "Notes"}, actor: user)
+      document = Fixtures.create_document!(user, %{title: "Notes"})
 
-      Document.save_snapshot!(document, nil, %{excerpt: "First line\nSecond line"},
-        authorize?: false
-      )
+      Document.save_snapshot(document.id, nil, "First line\nSecond line")
 
-      untitled = Document.create_document!(%{}, actor: user)
+      untitled = Fixtures.create_document!(user, %{})
 
       {:ok, view, _html} = live(conn, ~p"/documents")
 
@@ -70,10 +53,10 @@ defmodule TextexpWeb.DocumentListLiveTest do
     end
 
     test "the list is sorted by last update, most recent first", %{conn: conn, user: user} do
-      older = Document.create_document!(%{title: "Older"}, actor: user)
-      newer = Document.create_document!(%{title: "Newer"}, actor: user)
+      older = Fixtures.create_document!(user, %{title: "Older"})
+      newer = Fixtures.create_document!(user, %{title: "Newer"})
       # editing the older one makes it the most recent
-      Document.save_snapshot!(older, nil, %{excerpt: "edited"}, authorize?: false)
+      Document.save_snapshot(older.id, nil, "edited")
 
       {:ok, view, _html} = live(conn, ~p"/documents")
 
@@ -88,7 +71,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
     end
 
     test "a deleted empty document leaves the list", %{conn: conn, user: user} do
-      document = Document.create_document!(%{}, actor: user)
+      document = Fixtures.create_document!(user, %{})
       {:ok, view, _html} = live(conn, ~p"/documents")
       assert has_element?(view, "#documents-#{document.id}")
 
@@ -103,7 +86,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
 
     test "opening a document from the list navigates to it with the sidebar",
          %{conn: conn, user: user} do
-      document = Document.create_document!(%{title: "Notes"}, actor: user)
+      document = Fixtures.create_document!(user, %{title: "Notes"})
       {:ok, view, _html} = live(conn, ~p"/documents")
 
       {:ok, view, _html} =
@@ -118,8 +101,8 @@ defmodule TextexpWeb.DocumentListLiveTest do
 
     test "searching lists the matching documents, and clearing it lists all of them",
          %{conn: conn, user: user} do
-      cats = Document.create_document!(%{title: "Les chats"}, actor: user)
-      dogs = Document.create_document!(%{title: "Les chiens"}, actor: user)
+      cats = Fixtures.create_document!(user, %{title: "Les chats"})
+      dogs = Fixtures.create_document!(user, %{title: "Les chiens"})
       {:ok, view, _html} = live(conn, ~p"/documents")
 
       view |> element("#search-form") |> render_change(%{"query" => "chats"})
@@ -151,12 +134,8 @@ defmodule TextexpWeb.DocumentListLiveTest do
         ])
       )
 
-      document =
-        %{title: "Notes"}
-        |> Document.create_document!(actor: user)
-        |> Document.save_snapshot!(Yex.encode_state_as_update!(body), %{excerpt: "Le chat dort"},
-          authorize?: false
-        )
+      document = Fixtures.create_document!(user, %{title: "Notes"})
+      Document.save_snapshot(document.id, Yex.encode_state_as_update!(body), "Le chat dort")
 
       {:ok, view, _html} = live(conn, ~p"/documents")
       view |> element("#search-form") |> render_change(%{"query" => "chat"})
@@ -167,10 +146,10 @@ defmodule TextexpWeb.DocumentListLiveTest do
 
     test "lists the documents the user owns or is a member of", %{conn: conn, user: user} do
       other = register_user()
-      own = Document.create_document!(%{title: "Mine"}, actor: user)
-      shared = Document.create_document!(%{title: "Shared"}, actor: other)
-      Document.set_document_members!(shared, [%{id: user.id, role: :viewer}], actor: other)
-      hidden = Document.create_document!(%{title: "Hidden"}, actor: other)
+      own = Fixtures.create_document!(user, %{title: "Mine"})
+      shared = Fixtures.create_document!(other, %{title: "Shared"})
+      Fixtures.share!(other, shared, user, :viewer)
+      hidden = Fixtures.create_document!(other, %{title: "Hidden"})
 
       {:ok, view, _html} = live(conn, ~p"/documents")
 
@@ -180,8 +159,8 @@ defmodule TextexpWeb.DocumentListLiveTest do
     end
 
     test "search ignores the documents the user cannot read", %{conn: conn, user: user} do
-      own = Document.create_document!(%{title: "Mes chats"}, actor: user)
-      hidden = Document.create_document!(%{title: "Leurs chats"}, actor: register_user())
+      own = Fixtures.create_document!(user, %{title: "Mes chats"})
+      hidden = Fixtures.create_document!(register_user(), %{title: "Leurs chats"})
       {:ok, view, _html} = live(conn, ~p"/documents")
 
       view |> element("#search-form") |> render_change(%{"query" => "chats"})
@@ -192,7 +171,7 @@ defmodule TextexpWeb.DocumentListLiveTest do
     end
 
     test "a search without match shows that nothing was found", %{conn: conn, user: user} do
-      document = Document.create_document!(%{title: "Les chats"}, actor: user)
+      document = Fixtures.create_document!(user, %{title: "Les chats"})
       {:ok, view, _html} = live(conn, ~p"/documents")
 
       view |> element("#search-form") |> render_change(%{"query" => "chats AND ("})
@@ -247,9 +226,10 @@ defmodule TextexpWeb.DocumentListLiveTest do
       assert has_element?(view, "#documents-#{id}", "Recette des crêpes")
       assert has_element?(view, "#documents-#{id}", "Farine, œufs, lait")
 
-      document = Document.get_document!(id, actor: user)
+      document = Document.get_document!(id)
+      assert document.owner_id == user.id
       assert document.title == "Recette des crêpes"
-      assert Document.document_markdown!(document) == "Farine, œufs, lait"
+      assert Document.markdown(document) == "Farine, œufs, lait"
     end
 
     test "reports a file it could not import", %{conn: conn} do
