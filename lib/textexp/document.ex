@@ -10,15 +10,15 @@ defmodule Textexp.Document do
   YPersistence saves the documents being edited, whose DocServer checks the
   rights of the clients (see `Textexp.Document.Access`).
 
-  A change of a member's role is broadcast on `members_topic/1`, a rename on
-  `Textexp.Document.YPersistence.topic/1`.
+  A change of a member's role is broadcast on `members_topic/1`, a rename or a
+  change of tags on `Textexp.Document.YPersistence.topic/1`.
   """
   import Ecto.Query
 
   alias Ecto.Changeset
   alias Textexp.Accounts
   alias Textexp.Accounts.User
-  alias Textexp.Document.{Body, Document, Membership, Policy, YPersistence}
+  alias Textexp.Document.{Body, Document, Membership, Policy, Tag, TagDocument, YPersistence}
   alias Textexp.SqliteRepo, as: Repo
 
   # Largest Yjs state an import accepts.
@@ -283,7 +283,12 @@ defmodule Textexp.Document do
   end
 
   def delete_document(id) do
-    Repo.delete_all(from d in Document, where: d.id == ^id)
+    Repo.transact(fn ->
+      Repo.delete_all(from d in Document, where: d.id == ^id)
+      delete_unused_tags()
+      {:ok, id}
+    end)
+
     :ok
   end
 
@@ -385,5 +390,111 @@ defmodule Textexp.Document do
     else
       _ -> {:error, :not_found}
     end
+  end
+
+  ## Tags
+
+  @doc """
+  The tags of the document of `id`, by label. Whether the user may read it is
+  checked beforehand (see `get_document/2`).
+  """
+  def list_tags(document_id) do
+    Repo.all(
+      from t in Tag,
+        join: l in TagDocument,
+        on: l.tag_id == t.id,
+        where: l.document_id == ^document_id,
+        order_by: t.key
+    )
+  end
+
+  @doc "The tags `user` can see, by label: those of the documents they can read."
+  def visible_tags(user) do
+    readable_by(user)
+    |> join(:inner, [document: d], l in TagDocument, as: :link, on: l.document_id == d.id)
+    |> join(:inner, [link: l], t in Tag, as: :tag, on: t.id == l.tag_id)
+    |> distinct(true)
+    |> order_by([tag: t], t.key)
+    |> select([tag: t], t)
+    |> Repo.all()
+  end
+
+  @doc """
+  Puts the tag of `label` on a document that `user` can write, creating the tag
+  if no document has it yet. `{:document_tags_changed, document_id}` is
+  broadcast on `YPersistence.topic/1`.
+  """
+  def add_tag(document_id, user, label) do
+    case Tag.normalize_label(label) do
+      nil ->
+        {:error, :invalid}
+
+      label ->
+        with {:ok, tag} <-
+               authorized(document_id, user, :write, fn document ->
+                 tag = get_or_create_tag(label)
+
+                 Repo.insert!(%TagDocument{document_id: document.id, tag_id: tag.id},
+                   on_conflict: :nothing
+                 )
+
+                 {:ok, tag}
+               end) do
+          broadcast_tags_changed(document_id)
+          {:ok, tag}
+        end
+    end
+  end
+
+  # Concurrent creations of the same tag: the first one wins.
+  defp get_or_create_tag(label) do
+    key = Tag.key(label)
+
+    Repo.insert!(%Tag{label: label, key: key, color: Tag.color_for(label)},
+      on_conflict: :nothing,
+      conflict_target: :key
+    )
+
+    Repo.get_by!(Tag, key: key)
+  end
+
+  @doc """
+  Takes a tag off a document that `user` can write; the tag is deleted with its
+  last document. Broadcast as `add_tag/3`.
+  """
+  def remove_tag(document_id, user, tag_id) do
+    with {:ok, tag_id} <- Ecto.UUID.cast(tag_id),
+         {:ok, _} <-
+           authorized(document_id, user, :write, fn document ->
+             Repo.delete_all(
+               from l in TagDocument,
+                 where: l.document_id == ^document.id and l.tag_id == ^tag_id
+             )
+
+             delete_unused_tags()
+             {:ok, tag_id}
+           end) do
+      broadcast_tags_changed(document_id)
+      :ok
+    else
+      :error -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp delete_unused_tags do
+    Repo.delete_all(
+      from t in Tag,
+        as: :tag,
+        where: not exists(from l in TagDocument, where: l.tag_id == parent_as(:tag).id)
+    )
+  end
+
+  defp broadcast_tags_changed(document_id) do
+    Phoenix.PubSub.broadcast(
+      Textexp.PubSub,
+      YPersistence.topic(document_id),
+      {:document_tags_changed, document_id}
+    )
   end
 end
