@@ -403,13 +403,13 @@ defmodule Textexp.Document do
       from t in Tag,
         join: l in TagDocument,
         on: l.tag_id == t.id,
-        where: l.document_id == ^document_id,
-        order_by: t.key
+        where: l.document_id == ^document_id
     )
+    |> Tag.sort_by_label()
   end
 
   @doc "The tags `user` can see, by label: those of the documents they can read."
-  def visible_tags(user), do: user |> visible_tags_query() |> Repo.all()
+  def visible_tags(user), do: user |> visible_tags_query() |> Repo.all() |> Tag.sort_by_label()
 
   @doc """
   Among the tags `user` can see, those whose label contains `query`, whatever
@@ -421,6 +421,7 @@ defmodule Textexp.Document do
     |> where([tag: t], fragment("instr(?, ?) > 0", t.key, ^Tag.key(String.trim(query))))
     |> limit(8)
     |> Repo.all()
+    |> Tag.sort_by_label()
   end
 
   defp visible_tags_query(user) do
