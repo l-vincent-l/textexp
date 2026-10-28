@@ -28,6 +28,14 @@ defmodule Textexp.Document.SearchIndexTest do
     assert id == ecole.id
   end
 
+  test "takes apostrophes as word separators, not quotes", %{user: user} do
+    statuts = Fixtures.create_document!(user, %{title: "Les statuts de l'association"})
+    {:ok, index} = SearchIndex.start_link(user)
+
+    assert {:ok, [%{id: id}]} = SearchIndex.search(index, "l'association")
+    assert id == statuts.id
+  end
+
   test "stop/1 ends it at once, without ending its caller", %{user: user} do
     {:ok, index} = SearchIndex.start_link(user)
     ref = Process.monitor(index)

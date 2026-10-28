@@ -99,9 +99,12 @@ defmodule Textexp.Document.Search do
   # expected: the query is parsed here.
   # The `{id, body}` of the matching documents, best match first, and the
   # function giving the snippet segments of a body for this query.
+  # Apostrophes become spaces: Tantivy reads them as quotes, so that
+  # "l'association" would be a syntax error. The tokenizer splits words there
+  # anyway.
   defp search_hits(index, query) do
     with {:ok, parser} <- Query.parser(index, ["title", "body"]),
-         {:ok, query} <- Query.parse(parser, query),
+         {:ok, query} <- Query.parse(parser, String.replace(query, "'", " ")),
          {:ok, searcher} <- Searcher.new(index),
          {:ok, hits} <- Searcher.search(searcher, query, @limit) do
       snippet = fn body ->
