@@ -57,12 +57,14 @@ defmodule TextexpWeb.DocumentComponents do
   end
 
   @doc """
-  A tag, as a discreet badge of its color (see `.tag` in app.css), followed by
-  its inner block if any (e.g. a button removing it).
+  A tag, as a discreet badge of its color (see `.tag` in app.css): its label,
+  or the `label` slot (e.g. a button), followed by its inner block if any
+  (e.g. a button removing it).
   """
   attr :tag, :map, required: true
   attr :class, :any, default: nil
   attr :rest, :global
+  slot :label
   slot :inner_block
 
   def tag_badge(assigns) do
@@ -72,7 +74,12 @@ defmodule TextexpWeb.DocumentComponents do
       class={["tag badge badge-sm gap-0.5 border-0 px-1.5 text-[0.6875rem]", @class]}
       {@rest}
     >
-      {@tag.label}{render_slot(@inner_block)}
+      <%= if @label != [] do %>
+        {render_slot(@label)}
+      <% else %>
+        {@tag.label}
+      <% end %>
+      {render_slot(@inner_block)}
     </span>
     """
   end

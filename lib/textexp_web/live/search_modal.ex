@@ -7,7 +7,8 @@ defmodule TextexpWeb.SearchModal do
 
   The tags whose label contains the query are offered under the field. One
   picked becomes a filter: the results are then the documents carrying it,
-  those matching the query if there is one.
+  those matching the query if there is one. The LiveView can open the modal
+  filtered by a tag (`initial_tag`), picked on the page.
 
   Closing (its button, a click outside, Escape) sends `close_search` to the
   LiveView, which stops rendering it.
@@ -30,9 +31,23 @@ defmodule TextexpWeb.SearchModal do
        # At most 8 (see Document.search_tags/2)
        tag_suggestions: [],
        tag: nil,
-       tagged_ids: nil
+       tagged_ids: nil,
+       initial_tag_applied?: false
      )
      |> stream(:results, [])}
+  end
+
+  # The first update can bring `initial_tag`, a tag picked on the page: the
+  # modal opens filtered by it. Later ones bring it again, ignored.
+  def update(assigns, socket) do
+    {tag, assigns} = Map.pop(assigns, :initial_tag)
+    socket = assign(socket, assigns)
+
+    if tag && !socket.assigns.initial_tag_applied? do
+      {:ok, socket |> assign(initial_tag_applied?: true) |> put_tag(tag)}
+    else
+      {:ok, socket}
+    end
   end
 
   def render(assigns) do
@@ -188,13 +203,7 @@ defmodule TextexpWeb.SearchModal do
         {:noreply, socket}
 
       tag ->
-        documents = Document.list_documents_tagged(socket.assigns.user, tag.id)
-
-        {:noreply,
-         socket
-         |> assign(tag: tag, tagged_ids: MapSet.new(documents, & &1.id))
-         |> push_event("search:clear", %{})
-         |> search("")}
+        {:noreply, socket |> push_event("search:clear", %{}) |> put_tag(tag)}
     end
   end
 
@@ -203,6 +212,15 @@ defmodule TextexpWeb.SearchModal do
      socket
      |> assign(tag: nil, tagged_ids: nil)
      |> search(socket.assigns.form[:query].value)}
+  end
+
+  # Filters by `tag`, the field emptied: every document carrying it.
+  defp put_tag(socket, tag) do
+    documents = Document.list_documents_tagged(socket.assigns.user, tag.id)
+
+    socket
+    |> assign(tag: tag, tagged_ids: MapSet.new(documents, & &1.id))
+    |> search("")
   end
 
   defp search(socket, query) do

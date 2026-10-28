@@ -449,10 +449,25 @@ defmodule TextexpWeb.DocumentLiveTest do
       {:ok, tag} = Document.add_tag(document.id, owner, "Urgent")
       assert has_element?(view, "#tags-#{tag.id}")
 
-      view |> element("#tags-#{tag.id} button") |> render_click()
+      view |> element("#tags-#{tag.id} button[phx-click=remove_tag]") |> render_click()
 
       assert Document.list_tags(document.id) == []
       refute has_element?(view, "#tags-#{tag.id}")
+    end
+
+    test "a tag opens the search on the documents carrying it",
+         %{owner: owner, document: document, view: view} do
+      other = Fixtures.create_document!(owner, %{title: "Autre"})
+      untagged = Fixtures.create_document!(owner, %{title: "Sans tag"})
+      {:ok, tag} = Document.add_tag(document.id, owner, "Recettes")
+      {:ok, _} = Document.add_tag(other.id, owner, "Recettes")
+
+      view |> element("#tags-#{tag.id} button[phx-click=search_tag]") |> render_click()
+
+      assert has_element?(view, "#search-panel #search-active-tag", "Recettes")
+      assert has_element?(view, "#search-results a[href='/documents/#{document.id}']")
+      assert has_element?(view, "#search-results a[href='/documents/#{other.id}']")
+      refute has_element?(view, "#search-results a[href='/documents/#{untagged.id}']")
     end
 
     test "a viewer sees the tags without changing them",
@@ -463,7 +478,7 @@ defmodule TextexpWeb.DocumentLiveTest do
       {:ok, view, _html} = live(log_in(conn, viewer), ~p"/documents/#{document.id}")
 
       assert has_element?(view, "#tags-#{tag.id}", "Urgent")
-      refute has_element?(view, "#tags-#{tag.id} button")
+      refute has_element?(view, "#tags-#{tag.id} button[phx-click=remove_tag]")
       refute has_element?(view, "#add-tag")
     end
 

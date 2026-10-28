@@ -115,6 +115,7 @@ defmodule TextexpWeb.DocumentLive do
                 id="search-modal"
                 index={@search_index}
                 user={@current_user}
+                initial_tag={@search_tag}
               />
               <.share_panel
                 :if={@sharing?}
@@ -237,6 +238,17 @@ defmodule TextexpWeb.DocumentLive do
     <ul id="tags" phx-update="stream" class="flex flex-wrap items-center gap-1.5">
       <li :for={{id, tag} <- @tags} id={id} class="flex">
         <.tag_badge tag={tag} class="group">
+          <:label>
+            <button
+              type="button"
+              phx-click="search_tag"
+              phx-value-id={tag.id}
+              title={"Documents avec le tag « #{tag.label} »"}
+              class="cursor-pointer decoration-dotted underline-offset-2 hover:underline"
+            >
+              {tag.label}
+            </button>
+          </:label>
           <button
             :if={@can_edit?}
             type="button"
@@ -445,6 +457,7 @@ defmodule TextexpWeb.DocumentLive do
        sharing?: false,
        search_open?: false,
        search_index: nil,
+       search_tag: nil,
        share_form: nil
      )
      |> stream(:viewers, [])
@@ -529,11 +542,17 @@ defmodule TextexpWeb.DocumentLive do
     assign(socket, adding_tag?: false, tag_form: to_form(%{"label" => ""}), tag_suggestions: [])
   end
 
+  defp open_search(socket, tag) do
+    socket = close_search(socket)
+    {:ok, index} = SearchIndex.start_link(socket.assigns.current_user)
+    assign(socket, search_open?: true, search_index: index, search_tag: tag)
+  end
+
   defp close_search(%{assigns: %{search_index: nil}} = socket), do: socket
 
   defp close_search(socket) do
     SearchIndex.stop(socket.assigns.search_index)
-    assign(socket, search_open?: false, search_index: nil)
+    assign(socket, search_open?: false, search_index: nil, search_tag: nil)
   end
 
   defp leave_document(%{assigns: %{document: nil}} = socket), do: socket
@@ -752,9 +771,14 @@ defmodule TextexpWeb.DocumentLive do
     do: {:noreply, assign(socket, sharing?: false)}
 
   # The search modal's index lives while it is open (see SearchModal).
-  def handle_event("open_search", _params, socket) do
-    {:ok, index} = SearchIndex.start_link(socket.assigns.current_user)
-    {:noreply, assign(socket, search_open?: true, search_index: index)}
+  def handle_event("open_search", _params, socket), do: {:noreply, open_search(socket, nil)}
+
+  # A tag of the document: the search opens on the documents carrying it.
+  def handle_event("search_tag", %{"id" => id}, socket) do
+    case Enum.find(Document.list_tags(socket.assigns.document.id), &(&1.id == id)) do
+      nil -> {:noreply, socket}
+      tag -> {:noreply, open_search(socket, tag)}
+    end
   end
 
   def handle_event("close_search", _params, socket), do: {:noreply, close_search(socket)}
