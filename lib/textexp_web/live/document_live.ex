@@ -140,7 +140,7 @@ defmodule TextexpWeb.DocumentLive do
 
         <div class="drawer-side z-20">
           <label for="sidebar-drawer" aria-label="Fermer le menu" class="drawer-overlay"></label>
-          <div class="flex min-h-full w-64 flex-col border-r-2 border-base-content bg-base-100 p-4">
+          <div class="flex min-h-full w-64 flex-col border-r border-base-content/20 bg-base-100 p-4">
             <div class="mb-3 flex items-center justify-between">
               <Layouts.logo class="px-1" />
               <button

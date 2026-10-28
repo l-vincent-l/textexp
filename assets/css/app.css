@@ -194,6 +194,13 @@
     color: var(--color-primary-content);
   }
 
+  /* The active item of a menu (e.g. the open document), in lavender rather
+     than in ink */
+  .menu {
+    --menu-active-bg: var(--color-base-300);
+    --menu-active-fg: var(--color-base-content);
+  }
+
   /* Fields drawn in ink, like buttons */
   .input,
   .select,
