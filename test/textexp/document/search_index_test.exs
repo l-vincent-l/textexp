@@ -49,6 +49,17 @@ defmodule Textexp.Document.SearchIndexTest do
     assert {:ok, []} = SearchIndex.search(index, "z")
   end
 
+  test "searches among the documents carrying a tag", %{user: user, document: document} do
+    for n <- 1..20, do: Fixtures.create_document!(user, %{title: "Tarte n°#{n}"})
+    {:ok, tag} = Textexp.Document.add_tag(document.id, user, "Desserts")
+    {:ok, index} = SearchIndex.start_link(user)
+
+    # filtered before the 20 best matches are kept
+    assert {:ok, [%{id: id}]} = SearchIndex.search(index, "tarte", tag.id)
+    assert id == document.id
+    assert {:ok, []} = SearchIndex.search(index, "statuts", tag.id)
+  end
+
   test "stop/1 ends it at once, without ending its caller", %{user: user} do
     {:ok, index} = SearchIndex.start_link(user)
     ref = Process.monitor(index)

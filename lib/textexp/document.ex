@@ -66,12 +66,28 @@ defmodule Textexp.Document do
     |> Repo.all()
   end
 
-  @doc "The documents `user` can read, with the text of their body: `{document, text}`."
+  @doc """
+  The documents `user` can read, with the text of their body and the ids of
+  their tags: `{document, text, tag_ids}`.
+  """
   def list_documents_with_text(user) do
-    readable_by(user)
-    |> select([document: d], struct(d, [:snapshot | @fields]))
-    |> Repo.all()
-    |> Enum.map(&{%{&1 | snapshot: nil}, body(&1.snapshot, :text)})
+    documents =
+      readable_by(user)
+      |> select([document: d], struct(d, [:snapshot | @fields]))
+      |> Repo.all()
+
+    tag_ids =
+      from(l in TagDocument,
+        where: l.document_id in ^Enum.map(documents, & &1.id),
+        select: {l.document_id, l.tag_id}
+      )
+      |> Repo.all()
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+
+    Enum.map(documents, fn document ->
+      {%{document | snapshot: nil}, body(document.snapshot, :text),
+       Map.get(tag_ids, document.id, [])}
+    end)
   end
 
   @doc """

@@ -35,7 +35,6 @@ defmodule TextexpWeb.SearchModal do
        more_tags?: false,
        all_tags?: false,
        tag: nil,
-       tagged_ids: nil,
        initialized?: false
      )
      |> stream(:results, [])}
@@ -212,8 +211,6 @@ defmodule TextexpWeb.SearchModal do
     {:noreply, search(socket, query)}
   end
 
-  # The documents carrying the tag are read once: like the index, the results
-  # do not follow the changes made while the modal is open.
   def handle_event("pick_tag", %{"id" => id}, socket) do
     case Enum.find(socket.assigns.tag_suggestions, &(&1.id == id)) do
       nil ->
@@ -233,18 +230,19 @@ defmodule TextexpWeb.SearchModal do
   def handle_event("clear_tag", _params, socket) do
     {:noreply,
      socket
-     |> assign(tag: nil, tagged_ids: nil)
+     |> assign(tag: nil)
      |> search(socket.assigns.form[:query].value)}
   end
 
-  # Filters by `tag`, the field emptied: every document carrying it.
+  # Filters by `tag`, the field emptied: every document carrying it. A query
+  # then searches among them in the index, which does not follow the tags put
+  # while the modal is open.
   defp put_tag(socket, tag) do
     documents = Document.list_documents_tagged(socket.assigns.user, tag.id)
 
     socket
     |> assign(
       tag: tag,
-      tagged_ids: MapSet.new(documents, & &1.id),
       form: to_form(%{"query" => ""}, as: "search"),
       tag_suggestions: [],
       more_tags?: false
@@ -284,6 +282,7 @@ defmodule TextexpWeb.SearchModal do
 
       query ->
         index = socket.assigns.index
+        tag_id = tag && tag.id
 
         socket
         |> assign(
@@ -291,7 +290,9 @@ defmodule TextexpWeb.SearchModal do
           tag_suggestions: tag_suggestions(user, query, tag),
           more_tags?: false
         )
-        |> start_async(:search, fn -> {query, SearchIndex.search(index, query)} end)
+        |> start_async(:search, fn ->
+          {query, SearchIndex.search(index, query, tag_id)}
+        end)
     end
   end
 
@@ -315,12 +316,6 @@ defmodule TextexpWeb.SearchModal do
     do: {:noreply, show_results(socket, {:error, :exit})}
 
   defp show_results(socket, {:ok, documents}) do
-    documents =
-      case socket.assigns.tagged_ids do
-        nil -> documents
-        ids -> Enum.filter(documents, &MapSet.member?(ids, &1.id))
-      end
-
     socket
     |> assign(loading?: false, failed?: false, searched?: true)
     |> stream(:results, documents, reset: true)
