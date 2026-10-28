@@ -16,6 +16,7 @@ defmodule Textexp.Document do
 
   alias Ecto.Changeset
   alias Textexp.Accounts
+  alias Textexp.Accounts.User
   alias Textexp.Document.{Body, Document, Membership, Policy}
   alias Textexp.SqliteRepo, as: Repo
 
@@ -139,6 +140,26 @@ defmodule Textexp.Document do
           {:error, :forbidden}
       end
     end)
+  end
+
+  @doc """
+  The document `user` opened last (see `opened/2`) if they can still read it,
+  else the one last updated, else `nil`.
+  """
+  def last_opened(user) do
+    readable_by(user)
+    |> join(:inner, [], u in User, as: :user, on: u.id == ^user.id)
+    |> order_by([document: d, user: u], desc: coalesce(d.id == u.last_document_id, false))
+    |> order_by([document: d], desc: d.updated_at)
+    |> limit(1)
+    |> select([document: d], struct(d, @fields))
+    |> Repo.one()
+  end
+
+  @doc "Remembers that `user` opened `document`, for `last_opened/1`."
+  def opened(user, %Document{id: id}) do
+    Repo.update_all(from(u in User, where: u.id == ^user.id), set: [last_document_id: id])
+    :ok
   end
 
   @doc "The document of `id`, with its snapshot."

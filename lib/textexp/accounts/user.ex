@@ -14,6 +14,8 @@ defmodule Textexp.Accounts.User do
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :utc_datetime_usec
+    # Opened again at /documents (see Textexp.Document.last_opened/1)
+    field :last_document_id, :binary_id
   end
 
   @doc "The users whose email address is `email`, whatever its case."

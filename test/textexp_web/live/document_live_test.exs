@@ -336,6 +336,68 @@ defmodule TextexpWeb.DocumentLiveTest do
     end
   end
 
+  describe "/documents" do
+    setup %{conn: conn} do
+      user = register_user()
+      %{conn: log_in(conn, user), user: user}
+    end
+
+    defp opened_at_documents(conn) do
+      assert {:error, {_redirect, %{to: "/documents/" <> id}}} = live(conn, ~p"/documents")
+      id
+    end
+
+    test "opens the document opened last", %{conn: conn, user: user} do
+      first = Fixtures.create_document!(user, %{title: "First"})
+      _last_updated = Fixtures.create_document!(user, %{title: "Last updated"})
+      {:ok, _view, _html} = live(conn, ~p"/documents/#{first.id}")
+
+      assert opened_at_documents(conn) == first.id
+    end
+
+    test "without one, opens the document updated last", %{conn: conn, user: user} do
+      older = Fixtures.create_document!(user, %{title: "Older"})
+      _newer = Fixtures.create_document!(user, %{title: "Newer"})
+      Document.save_snapshot(older.id, nil, "edited")
+
+      assert opened_at_documents(conn) == older.id
+    end
+
+    test "skips a document opened last that can no longer be read", %{conn: conn, user: user} do
+      owner = register_user()
+      shared = Fixtures.create_document!(owner, %{title: "Shared"})
+      membership = Fixtures.share!(owner, shared, user, :viewer)
+      own = Fixtures.create_document!(user, %{title: "Mine"})
+      {:ok, view, _html} = live(conn, ~p"/documents/#{shared.id}")
+      :ok = Document.remove_member(owner, membership.id)
+      assert_redirect(view, ~p"/documents")
+
+      assert opened_at_documents(conn) == own.id
+    end
+
+    test "without any document, creates one", %{conn: conn, user: user} do
+      id = opened_at_documents(conn)
+
+      assert %{owner_id: owner_id, title: nil} = Document.get_document!(id)
+      assert owner_id == user.id
+    end
+
+    test "the sidebar lists the documents the user owns or is a member of",
+         %{conn: conn, user: user} do
+      other = register_user()
+      own = Fixtures.create_document!(user, %{title: "Mine"})
+      shared = Fixtures.create_document!(other, %{title: "Shared"})
+      Fixtures.share!(other, shared, user, :viewer)
+      hidden = Fixtures.create_document!(other, %{title: "Hidden"})
+
+      {:ok, view, _html} = live(conn, ~p"/documents/#{own.id}")
+
+      assert has_element?(view, "#documents-#{own.id}")
+      assert has_element?(view, "#documents-#{shared.id}")
+      refute has_element?(view, "#documents-#{hidden.id}")
+    end
+  end
+
   describe "import" do
     setup %{conn: conn} do
       user = register_user()
@@ -376,6 +438,48 @@ defmodule TextexpWeb.DocumentLiveTest do
 
       html = render_hook(view, "import_failed", %{"name" => "big.md", "reason" => "too_large"})
       assert html =~ "trop volumineux"
+    end
+  end
+
+  describe "search modal" do
+    setup %{conn: conn} do
+      user = register_user()
+      document = Fixtures.create_document!(user, %{title: "Notes"})
+      {:ok, view, _html} = live(log_in(conn, user), ~p"/documents/#{document.id}")
+      %{user: user, view: view}
+    end
+
+    # Opens the modal, which indexes the documents as they are then, and searches.
+    defp search(view, query) do
+      view |> element("#search-button") |> render_click()
+      view |> form("#search-modal-form", search: %{query: query}) |> render_change()
+      # Searches run in the background, the first one waiting for the index
+      render_async(view, 2_000)
+    end
+
+    test "results show where the words appear in the body", %{user: user, view: view} do
+      document = Fixtures.create_document!(user, %{title: "Chez moi"})
+      Document.save_snapshot(document.id, state("Le chat dort"), "Le chat dort")
+
+      search(view, "chat")
+
+      assert has_element?(view, "#search-results [role=option] p mark", "chat")
+    end
+
+    test "ignores the documents the user cannot read", %{user: user, view: view} do
+      own = Fixtures.create_document!(user, %{title: "Mes chats"})
+      hidden = Fixtures.create_document!(register_user(), %{title: "Leurs chats"})
+
+      search(view, "chats")
+
+      assert has_element?(view, "#search-results a[href='/documents/#{own.id}']")
+      refute has_element?(view, "#search-results a[href='/documents/#{hidden.id}']")
+    end
+
+    test "a search without match shows that nothing was found", %{view: view} do
+      search(view, "chats AND (")
+
+      assert has_element?(view, "#search-results-empty", "Aucun résultat")
     end
   end
 

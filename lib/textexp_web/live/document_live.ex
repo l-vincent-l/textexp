@@ -358,6 +358,20 @@ defmodule TextexpWeb.DocumentLive do
      |> stream(:documents, documents)}
   end
 
+  # /documents opens the document the user opened last, else the one they
+  # updated last, else a new one (deleted if left empty, see YPersistence).
+  def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
+    user = socket.assigns.current_user
+
+    document =
+      with nil <- Document.last_opened(user) do
+        {:ok, document} = Document.create_document(user)
+        document
+      end
+
+    {:noreply, push_patch(socket, to: ~p"/documents/#{document.id}", replace: true)}
+  end
+
   # Going from one document to another is a live patch: the same process
   # leaves the previous document and opens the next one.
   def handle_params(%{"id" => id}, _uri, %{assigns: %{document: %{id: id}}} = socket),
@@ -390,6 +404,7 @@ defmodule TextexpWeb.DocumentLive do
       Phoenix.PubSub.subscribe(Textexp.PubSub, Document.members_topic(document.id))
 
       user = socket.assigns.current_user
+      Document.opened(user, document)
       Presence.subscribe(viewers_topic(document.id))
       Presence.track_user(viewers_topic(document.id), user.id, %{id: user.id, email: user.email})
     end
