@@ -776,8 +776,12 @@ defmodule TextexpWeb.DocumentLive do
   # A tag of the document: the search opens on the documents carrying it.
   def handle_event("search_tag", %{"id" => id}, socket) do
     case Enum.find(Document.list_tags(socket.assigns.document.id), &(&1.id == id)) do
-      nil -> {:noreply, socket}
-      tag -> {:noreply, open_search(socket, tag)}
+      nil ->
+        {:noreply, socket}
+
+      tag ->
+        Document.record_tag_search(socket.assigns.current_user, tag.id)
+        {:noreply, open_search(socket, tag)}
     end
   end
 

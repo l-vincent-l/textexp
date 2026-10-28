@@ -42,6 +42,19 @@ defmodule Textexp.Document.Tag do
 
   def key(label), do: String.downcase(label)
 
+  @doc """
+  Sorts `tags` by label as in a dictionary: case and accents ignored, so that
+  "Épices" comes among the E (SQLite would put it after Z).
+  """
+  def sort_by_label(tags), do: Enum.sort_by(tags, &{sort_key(&1.label), &1.key})
+
+  defp sort_key(label) do
+    label
+    |> key()
+    |> :unicode.characters_to_nfd_binary()
+    |> String.replace(~r/\p{Mn}/u, "")
+  end
+
   @doc "The color of a new tag, the same for a given label."
   def color_for(label), do: Enum.at(@colors, :erlang.phash2(key(label), length(@colors)))
 end

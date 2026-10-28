@@ -609,6 +609,52 @@ defmodule TextexpWeb.DocumentLiveTest do
       refute has_element?(view, "#search-results a[href='/documents/#{other.id}']")
     end
 
+    test "the empty modal offers the 4 most searched tags, then all of them by label",
+         %{user: user, view: view} do
+      document = Fixtures.create_document!(user, %{title: "Tagué"})
+
+      tags =
+        for label <- ~w(Épices Arbre Bleu Ciel Dune Feu) do
+          {:ok, tag} = Document.add_tag(document.id, user, label)
+          tag
+        end
+
+      feu = Enum.find(tags, &(&1.label == "Feu"))
+      Document.record_tag_search(user, feu.id)
+
+      view |> element("#search-button") |> render_click()
+
+      assert labels(view) == ["Feu", "Arbre", "Bleu", "Ciel"]
+      assert has_element?(view, "#search-more-tags")
+
+      view |> element("#search-more-tags") |> render_click()
+
+      assert labels(view) == ["Arbre", "Bleu", "Ciel", "Dune", "Épices", "Feu"]
+      refute has_element?(view, "#search-more-tags")
+    end
+
+    test "picking a tag counts as a search of it", %{user: user, view: view} do
+      document = Fixtures.create_document!(user, %{title: "Tagué"})
+      for label <- ~w(Arbre Bleu), do: Document.add_tag(document.id, user, label)
+      {:ok, bleu} = Document.add_tag(document.id, user, "Bleu")
+
+      view |> element("#search-button") |> render_click()
+      refute has_element?(view, "#search-more-tags")
+      view |> element("#search-tag-#{bleu.id}") |> render_click()
+
+      assert [%{label: "Bleu"} | _] = Document.top_tags(user, 2)
+    end
+
+    # The labels of the tags offered under the field, in order.
+    defp labels(view) do
+      view
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#search-tags [id^=search-tag-]")
+      |> Enum.map(&LazyHTML.text/1)
+      |> Enum.map(&String.trim/1)
+    end
+
     test "a search without match shows that nothing was found", %{view: view} do
       search(view, "chats AND (")
 
