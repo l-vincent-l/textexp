@@ -17,6 +17,17 @@ defmodule Textexp.Document.SearchIndexTest do
     assert {:ok, []} = SearchIndex.search(index, "gâteau")
   end
 
+  test "finds the other forms of a word, whatever its accents", %{user: user} do
+    statuts = Fixtures.create_document!(user, %{title: "Les statuts de l'association"})
+    ecole = Fixtures.create_document!(user, %{title: "Rentrée à l'École"})
+    {:ok, index} = SearchIndex.start_link(user)
+
+    assert {:ok, [%{id: id}]} = SearchIndex.search(index, "statut")
+    assert id == statuts.id
+    assert {:ok, [%{id: id}]} = SearchIndex.search(index, "ecoles")
+    assert id == ecole.id
+  end
+
   test "stop/1 ends it at once, without ending its caller", %{user: user} do
     {:ok, index} = SearchIndex.start_link(user)
     ref = Process.monitor(index)
