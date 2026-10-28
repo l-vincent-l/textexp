@@ -10,14 +10,15 @@ defmodule Textexp.Document do
   YPersistence saves the documents being edited, whose DocServer checks the
   rights of the clients (see `Textexp.Document.Access`).
 
-  A change of a member's role is broadcast on `members_topic/1`.
+  A change of a member's role is broadcast on `members_topic/1`, a rename on
+  `Textexp.Document.YPersistence.topic/1`.
   """
   import Ecto.Query
 
   alias Ecto.Changeset
   alias Textexp.Accounts
   alias Textexp.Accounts.User
-  alias Textexp.Document.{Body, Document, Membership, Policy}
+  alias Textexp.Document.{Body, Document, Membership, Policy, YPersistence}
   alias Textexp.SqliteRepo, as: Repo
 
   # Largest Yjs state an import accepts.
@@ -218,13 +219,23 @@ defmodule Textexp.Document do
     end
   end
 
-  @doc "Renames a document that `user` can write: owner or editor."
+  @doc """
+  Renames a document that `user` can write: owner or editor.
+  `{:document_renamed, document_id, title, at}` is broadcast on
+  `YPersistence.topic/1`, for the other pages showing it.
+  """
   def rename_document(%Document{id: id}, user, title) do
     authorized(id, user, :write, fn document ->
       now = DateTime.utc_now()
 
       Repo.update_all(from(d in Document, where: d.id == ^id),
         set: [title: title, updated_at: now]
+      )
+
+      Phoenix.PubSub.broadcast(
+        Textexp.PubSub,
+        YPersistence.topic(id),
+        {:document_renamed, id, title, now}
       )
 
       {:ok, %{document | title: title, updated_at: now}}

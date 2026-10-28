@@ -179,6 +179,20 @@ defmodule TextexpWeb.DocumentLiveTest do
       assert Document.get_document!(document.id).title == "Mon document"
     end
 
+    test "a rename shows on the other pages of the document", %{conn: conn, user: user} do
+      owner = register_user()
+      document = Fixtures.create_document!(owner, %{title: "Notes"})
+      Fixtures.share!(owner, document, user, :viewer)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+      {:ok, owner_view, _html} = live(log_in(build_conn(), owner), ~p"/documents/#{document.id}")
+
+      owner_view |> element("#title-form") |> render_change(%{"title" => "Mon document"})
+
+      assert has_element?(view, "#document-title[value='Mon document']")
+      assert has_element?(view, "#documents-#{document.id}", "Mon document")
+      assert page_title(view) =~ "Mon document"
+    end
+
     test "a viewer reads the document without editing it", %{conn: conn, user: user} do
       owner = register_user()
       document = Fixtures.create_document!(owner, %{title: "Notes"})

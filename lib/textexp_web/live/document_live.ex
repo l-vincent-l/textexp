@@ -465,6 +465,19 @@ defmodule TextexpWeb.DocumentLive do
     end
   end
 
+  # Renamed on another page (or this one, then already shown). The input keeps
+  # what this user is typing: LiveView does not patch a focused input.
+  def handle_info({:document_renamed, document_id, title, at}, socket) do
+    document = socket.assigns.document
+
+    if document.id == document_id and title != document.title do
+      {:noreply,
+       socket |> assign(last_update: at) |> put_title(%{document | title: title, updated_at: at})}
+    else
+      {:noreply, socket}
+    end
+  end
+
   # An empty document was left and deleted (see YPersistence).
   def handle_info({:document_deleted, document_id}, socket) do
     socket = stream_delete_by_dom_id(socket, :documents, "documents-#{document_id}")
