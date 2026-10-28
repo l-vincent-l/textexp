@@ -102,4 +102,34 @@ defmodule Textexp.Document.TagTest do
 
     assert user |> Document.visible_tags() |> Enum.map(& &1.label) == ["Mine", "Shared"]
   end
+
+  test "search_tags/2 has the visible tags whose label contains the query",
+       %{owner: owner, document: document} do
+    user = Fixtures.confirmed_user()
+    shared = Fixtures.create_document!(owner, %{title: "Shared"})
+    Fixtures.share!(owner, shared, user, :viewer)
+    {:ok, _} = Document.add_tag(shared.id, owner, "Recettes")
+    {:ok, _} = Document.add_tag(shared.id, owner, "Récréation")
+    {:ok, _} = Document.add_tag(shared.id, owner, "100%")
+    {:ok, _} = Document.add_tag(document.id, owner, "Recettes secrètes")
+
+    assert user |> Document.search_tags(" REC ") |> Enum.map(& &1.label) == ["Recettes"]
+    assert user |> Document.search_tags("réc") |> Enum.map(& &1.label) == ["Récréation"]
+    # Not a LIKE pattern
+    assert user |> Document.search_tags("%") |> Enum.map(& &1.label) == ["100%"]
+  end
+
+  test "list_documents_tagged/2 has the readable documents carrying the tag",
+       %{owner: owner, document: document} do
+    user = Fixtures.confirmed_user()
+    shared = Fixtures.create_document!(owner, %{title: "Shared"})
+    Fixtures.share!(owner, shared, user, :viewer)
+    untagged = Fixtures.create_document!(user, %{title: "Untagged"})
+    {:ok, tag} = Document.add_tag(shared.id, owner, "Recettes")
+    {:ok, _} = Document.add_tag(document.id, owner, "Recettes")
+
+    assert [%{id: id}] = Document.list_documents_tagged(user, tag.id)
+    assert id == shared.id
+    refute id == untagged.id
+  end
 end

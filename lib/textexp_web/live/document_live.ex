@@ -1,6 +1,8 @@
 defmodule TextexpWeb.DocumentLive do
   use TextexpWeb, :live_view
 
+  import TextexpWeb.DocumentComponents, only: [tag_badge: 1]
+
   alias Textexp.Accounts
   alias Textexp.Document
   alias Textexp.Document.{Policy, SearchIndex, YPersistence}
@@ -112,6 +114,7 @@ defmodule TextexpWeb.DocumentLive do
                 module={TextexpWeb.SearchModal}
                 id="search-modal"
                 index={@search_index}
+                user={@current_user}
               />
               <.share_panel
                 :if={@sharing?}
@@ -232,26 +235,22 @@ defmodule TextexpWeb.DocumentLive do
   defp tags(assigns) do
     ~H"""
     <ul id="tags" phx-update="stream" class="flex flex-wrap items-center gap-1.5">
-      <li
-        :for={{id, tag} <- @tags}
-        id={id}
-        data-color={tag.color}
-        class="tag badge badge-sm group gap-0.5 border-0 px-1.5 text-[0.6875rem]"
-      >
-        {tag.label}
-        <button
-          :if={@can_edit?}
-          type="button"
-          phx-click="remove_tag"
-          phx-value-id={tag.id}
-          aria-label={"Retirer le tag « #{tag.label} »"}
-          class={[
-            "-mr-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-60 hover:opacity-100",
-            "focus-visible:opacity-100 [@media(hover:none)]:opacity-60"
-          ]}
-        >
-          <.icon name="hero-x-mark-micro" class="size-3" />
-        </button>
+      <li :for={{id, tag} <- @tags} id={id} class="flex">
+        <.tag_badge tag={tag} class="group">
+          <button
+            :if={@can_edit?}
+            type="button"
+            phx-click="remove_tag"
+            phx-value-id={tag.id}
+            aria-label={"Retirer le tag « #{tag.label} »"}
+            class={[
+              "-mr-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-60 hover:opacity-100",
+              "focus-visible:opacity-100 [@media(hover:none)]:opacity-60"
+            ]}
+          >
+            <.icon name="hero-x-mark-micro" class="size-3" />
+          </button>
+        </.tag_badge>
       </li>
     </ul>
     <%= if @can_edit? do %>

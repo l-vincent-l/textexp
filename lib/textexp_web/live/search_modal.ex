@@ -5,6 +5,10 @@ defmodule TextexpWeb.SearchModal do
   which stops it when the modal closes, freeing the index. Each search runs in
   a task, as it waits for the index while it is being built.
 
+  The tags whose label contains the query are offered under the field. One
+  picked becomes a filter: the results are then the documents carrying it,
+  those matching the query if there is one.
+
   Closing (its button, a click outside, Escape) sends `close_search` to the
   LiveView, which stops rendering it.
   """
@@ -12,6 +16,7 @@ defmodule TextexpWeb.SearchModal do
 
   import TextexpWeb.DocumentComponents
 
+  alias Textexp.Document
   alias Textexp.Document.SearchIndex
 
   def mount(socket) do
@@ -21,7 +26,11 @@ defmodule TextexpWeb.SearchModal do
        form: to_form(%{"query" => ""}, as: "search"),
        loading?: false,
        failed?: false,
-       searched?: false
+       searched?: false,
+       # At most 8 (see Document.search_tags/2)
+       tag_suggestions: [],
+       tag: nil,
+       tagged_ids: nil
      )
      |> stream(:results, [])}
   end
@@ -58,12 +67,27 @@ defmodule TextexpWeb.SearchModal do
         >
           <label class="flex items-center gap-3 border-2 border-base-content bg-base-100 px-4 py-2.5">
             <.icon name="hero-magnifying-glass" class="size-5 shrink-0 text-base-content/50" />
+            <.tag_badge :if={@tag} id="search-active-tag" tag={@tag} class="shrink-0">
+              <button
+                id="search-clear-tag"
+                type="button"
+                phx-click={
+                  JS.push("clear_tag", target: @myself) |> JS.focus(to: "#search-modal-query")
+                }
+                aria-label={"Retirer le filtre « #{@tag.label} »"}
+                class="-mr-1 cursor-pointer opacity-60 transition-opacity hover:opacity-100"
+              >
+                <.icon name="hero-x-mark-micro" class="size-3" />
+              </button>
+            </.tag_badge>
             <input
               id="search-modal-query"
               name={@form[:query].name}
               type="search"
               value={@form[:query].value}
-              placeholder="Rechercher dans les documents"
+              placeholder={
+                if(@tag, do: "Rechercher parmi ces documents", else: "Rechercher dans les documents")
+              }
               autocomplete="off"
               phx-debounce="300"
               phx-mounted={JS.focus()}
@@ -72,7 +96,7 @@ defmodule TextexpWeb.SearchModal do
               aria-expanded="true"
               aria-autocomplete="list"
               aria-controls="search-results"
-              class="grow bg-transparent text-sm outline-none placeholder:text-base-content/50"
+              class="min-w-0 grow bg-transparent text-sm outline-none placeholder:text-base-content/50"
             />
             <span
               :if={@loading?}
@@ -82,6 +106,29 @@ defmodule TextexpWeb.SearchModal do
             ></span>
           </label>
         </.form>
+        <%!-- Picking a tag empties the field (see the SearchNav hook) --%>
+        <div
+          :if={@tag_suggestions != []}
+          id="search-tags"
+          class="mt-2 flex flex-wrap items-center gap-1.5"
+        >
+          <span class="text-xs text-base-content/60">Tags :</span>
+          <button
+            :for={tag <- @tag_suggestions}
+            id={"search-tag-#{tag.id}"}
+            type="button"
+            phx-click={
+              JS.push("pick_tag", value: %{id: tag.id}, target: @myself)
+              |> JS.focus(to: "#search-modal-query")
+            }
+            class="flex cursor-pointer"
+          >
+            <.tag_badge
+              tag={tag}
+              class="transition-[filter] hover:brightness-95 dark:hover:brightness-125"
+            />
+          </button>
+        </div>
         <%!-- Best match first. ↑ ↓ and Enter in the field select and open them
              (see the SearchNav hook). Its padding leaves room for the selected or
              hovered card, raised with a shadow, which it would otherwise cut. --%>
@@ -102,7 +149,7 @@ defmodule TextexpWeb.SearchModal do
               <% @searched? -> %>
                 Aucun résultat
               <% true -> %>
-                Titres et contenu des documents
+                Titres, contenu et tags des documents
             <% end %>
           </li>
           <li
@@ -130,24 +177,65 @@ defmodule TextexpWeb.SearchModal do
   end
 
   def handle_event("search", %{"search" => %{"query" => query}}, socket) do
+    {:noreply, search(socket, query)}
+  end
+
+  # The documents carrying the tag are read once: like the index, the results
+  # do not follow the changes made while the modal is open.
+  def handle_event("pick_tag", %{"id" => id}, socket) do
+    case Enum.find(socket.assigns.tag_suggestions, &(&1.id == id)) do
+      nil ->
+        {:noreply, socket}
+
+      tag ->
+        documents = Document.list_documents_tagged(socket.assigns.user, tag.id)
+
+        {:noreply,
+         socket
+         |> assign(tag: tag, tagged_ids: MapSet.new(documents, & &1.id))
+         |> push_event("search:clear", %{})
+         |> search("")}
+    end
+  end
+
+  def handle_event("clear_tag", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(tag: nil, tagged_ids: nil)
+     |> search(socket.assigns.form[:query].value)}
+  end
+
+  defp search(socket, query) do
     socket = assign(socket, form: to_form(%{"query" => query}, as: "search"))
+    %{user: user, tag: tag} = socket.assigns
 
-    socket =
-      case String.trim(query) do
-        "" ->
-          socket
-          |> assign(loading?: false, searched?: false)
-          |> stream(:results, [], reset: true)
+    case String.trim(query) do
+      "" when is_nil(tag) ->
+        socket
+        |> assign(loading?: false, searched?: false, tag_suggestions: [])
+        |> stream(:results, [], reset: true)
 
-        query ->
-          index = socket.assigns.index
+      # Every document carrying the tag
+      "" ->
+        documents = Document.list_documents_tagged(user, tag.id)
 
-          socket
-          |> assign(loading?: true)
-          |> start_async(:search, fn -> {query, SearchIndex.search(index, query)} end)
-      end
+        socket
+        |> assign(tag_suggestions: [])
+        |> show_results({:ok, documents})
 
-    {:noreply, socket}
+      query ->
+        index = socket.assigns.index
+
+        socket
+        |> assign(loading?: true, tag_suggestions: tag_suggestions(user, query, tag))
+        |> start_async(:search, fn -> {query, SearchIndex.search(index, query)} end)
+    end
+  end
+
+  defp tag_suggestions(user, query, tag) do
+    user
+    |> Document.search_tags(query)
+    |> Enum.reject(&(tag && &1.id == tag.id))
   end
 
   # A search replaced by another one is dropped by LiveView; one answering a
@@ -164,6 +252,12 @@ defmodule TextexpWeb.SearchModal do
     do: {:noreply, show_results(socket, {:error, :exit})}
 
   defp show_results(socket, {:ok, documents}) do
+    documents =
+      case socket.assigns.tagged_ids do
+        nil -> documents
+        ids -> Enum.filter(documents, &MapSet.member?(ids, &1.id))
+      end
+
     socket
     |> assign(loading?: false, failed?: false, searched?: true)
     |> stream(:results, documents, reset: true)

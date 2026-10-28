@@ -554,6 +554,46 @@ defmodule TextexpWeb.DocumentLiveTest do
       refute has_element?(view, "#search-results a[href='/documents/#{hidden.id}']")
     end
 
+    test "a picked tag filters the results", %{user: user, view: view} do
+      tagged = Fixtures.create_document!(user, %{title: "Crêpes"})
+      other = Fixtures.create_document!(user, %{title: "Gaufres"})
+      stranger = register_user()
+      hidden = Fixtures.create_document!(stranger, %{title: "Leur recette"})
+      {:ok, tag} = Document.add_tag(tagged.id, user, "Recettes")
+      {:ok, _} = Document.add_tag(hidden.id, stranger, "Recettes cachées")
+
+      search(view, "rec")
+      assert has_element?(view, "#search-tag-#{tag.id}", "Recettes")
+      refute has_element?(view, "#search-tags", "cachées")
+
+      view |> element("#search-tag-#{tag.id}") |> render_click()
+
+      assert has_element?(view, "#search-active-tag", "Recettes")
+      refute has_element?(view, "#search-tags")
+      assert has_element?(view, "#search-results a[href='/documents/#{tagged.id}']")
+      refute has_element?(view, "#search-results a[href='/documents/#{other.id}']")
+
+      view |> element("#search-clear-tag") |> render_click()
+
+      refute has_element?(view, "#search-active-tag")
+      refute has_element?(view, "#search-results [role=option]")
+    end
+
+    test "with a tag picked, a query searches the documents carrying it",
+         %{user: user, view: view} do
+      tagged = Fixtures.create_document!(user, %{title: "Crêpes au sucre"})
+      other = Fixtures.create_document!(user, %{title: "Gaufres au sucre"})
+      {:ok, tag} = Document.add_tag(tagged.id, user, "Recettes")
+
+      search(view, "rec")
+      view |> element("#search-tag-#{tag.id}") |> render_click()
+      view |> form("#search-modal-form", search: %{query: "sucre"}) |> render_change()
+      render_async(view, 2_000)
+
+      assert has_element?(view, "#search-results a[href='/documents/#{tagged.id}']")
+      refute has_element?(view, "#search-results a[href='/documents/#{other.id}']")
+    end
+
     test "a search without match shows that nothing was found", %{view: view} do
       search(view, "chats AND (")
 

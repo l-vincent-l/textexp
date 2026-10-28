@@ -1,7 +1,8 @@
 // Hook of a search field whose results are listed in the element of its
 // `aria-controls` (options: `role="option"`, each holding a link). The focus
 // stays in the field: ↑ and ↓ move through the results, Enter opens the
-// selected one. The first result is selected whenever they change.
+// selected one. The first result is selected whenever they change. The field
+// is emptied on the server's `search:clear` event.
 //
 // The selection is `aria-selected` on the option and `aria-activedescendant`
 // on the field. LiveView removes these attributes when it patches the
@@ -31,6 +32,11 @@ export const SearchNav = {
         event.preventDefault()
         options[this.active].querySelector("a")?.click()
       }
+    })
+
+    // Sent when a tag is picked: LiveView does not empty a focused field
+    this.handleEvent("search:clear", () => {
+      this.el.value = ""
     })
 
     this.highlight()

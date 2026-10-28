@@ -409,13 +409,37 @@ defmodule Textexp.Document do
   end
 
   @doc "The tags `user` can see, by label: those of the documents they can read."
-  def visible_tags(user) do
+  def visible_tags(user), do: user |> visible_tags_query() |> Repo.all()
+
+  @doc """
+  Among the tags `user` can see, those whose label contains `query`, whatever
+  its case; by label, at most 8.
+  """
+  def search_tags(user, query) do
+    user
+    |> visible_tags_query()
+    |> where([tag: t], fragment("instr(?, ?) > 0", t.key, ^Tag.key(String.trim(query))))
+    |> limit(8)
+    |> Repo.all()
+  end
+
+  defp visible_tags_query(user) do
     readable_by(user)
     |> join(:inner, [document: d], l in TagDocument, as: :link, on: l.document_id == d.id)
     |> join(:inner, [link: l], t in Tag, as: :tag, on: t.id == l.tag_id)
     |> distinct(true)
     |> order_by([tag: t], t.key)
     |> select([tag: t], t)
+  end
+
+  @doc "The documents `user` can read that carry the tag of `tag_id`, last updated first."
+  def list_documents_tagged(user, tag_id) do
+    readable_by(user)
+    |> join(:inner, [document: d], l in TagDocument,
+      on: l.document_id == d.id and l.tag_id == ^tag_id
+    )
+    |> order_by(desc: :updated_at)
+    |> select([document: d], struct(d, @fields))
     |> Repo.all()
   end
 
