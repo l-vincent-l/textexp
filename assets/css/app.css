@@ -201,6 +201,25 @@
     --menu-active-fg: var(--color-base-content);
   }
 
+  /* Tags, daisyUI badges: a light tint of their color, the text slightly
+     faded, so that they stay behind the title (see Textexp.Document.Tag) */
+  .tag {
+    --badge-bg: color-mix(in oklab, var(--tag-bg) 55%, transparent);
+    --badge-fg: color-mix(in oklab, var(--color-base-content) 80%, transparent);
+  }
+  .tag[data-color="lavender"] { --tag-bg: #dacff3; }
+  .tag[data-color="pink"] { --tag-bg: #fbd3e4; }
+  .tag[data-color="yellow"] { --tag-bg: #fff0a8; }
+  .tag[data-color="mint"] { --tag-bg: #c9eedd; }
+  .tag[data-color="sky"] { --tag-bg: #cfe4fa; }
+  .tag[data-color="peach"] { --tag-bg: #fdd9c4; }
+  [data-theme="dark"] .tag[data-color="lavender"] { --tag-bg: #4a3585; }
+  [data-theme="dark"] .tag[data-color="pink"] { --tag-bg: #6e2a50; }
+  [data-theme="dark"] .tag[data-color="yellow"] { --tag-bg: #6b5a14; }
+  [data-theme="dark"] .tag[data-color="mint"] { --tag-bg: #1f5a45; }
+  [data-theme="dark"] .tag[data-color="sky"] { --tag-bg: #24497a; }
+  [data-theme="dark"] .tag[data-color="peach"] { --tag-bg: #74391f; }
+
   /* Fields drawn in ink, like buttons */
   .input,
   .select,

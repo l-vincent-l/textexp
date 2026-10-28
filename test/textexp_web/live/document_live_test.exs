@@ -412,6 +412,70 @@ defmodule TextexpWeb.DocumentLiveTest do
     end
   end
 
+  describe "tags" do
+    setup %{conn: conn} do
+      owner = register_user()
+      document = Fixtures.create_document!(owner, %{title: "Notes"})
+      {:ok, view, _html} = live(log_in(conn, owner), ~p"/documents/#{document.id}")
+      %{owner: owner, document: document, view: view}
+    end
+
+    defp add_tag(view, label) do
+      view |> element("#add-tag") |> render_click()
+      view |> form("#tag-form", %{"label" => label}) |> render_submit()
+    end
+
+    test "an editor adds a tag", %{document: document, view: view} do
+      add_tag(view, "Urgent")
+
+      assert [%{id: id, label: "Urgent"}] = Document.list_tags(document.id)
+      assert has_element?(view, "#tags-#{id}", "Urgent")
+      refute has_element?(view, "#tag-form")
+    end
+
+    test "the field suggests the tags of the user's other documents",
+         %{owner: owner, document: document, view: view} do
+      other = Fixtures.create_document!(owner, %{title: "Other"})
+      {:ok, _} = Document.add_tag(other.id, owner, "Recettes")
+      {:ok, _} = Document.add_tag(document.id, owner, "Urgent")
+
+      view |> element("#add-tag") |> render_click()
+
+      assert has_element?(view, "#tag-suggestions option[value='Recettes']")
+      refute has_element?(view, "#tag-suggestions option[value='Urgent']")
+    end
+
+    test "an editor removes a tag", %{owner: owner, document: document, view: view} do
+      {:ok, tag} = Document.add_tag(document.id, owner, "Urgent")
+      assert has_element?(view, "#tags-#{tag.id}")
+
+      view |> element("#tags-#{tag.id} button") |> render_click()
+
+      assert Document.list_tags(document.id) == []
+      refute has_element?(view, "#tags-#{tag.id}")
+    end
+
+    test "a viewer sees the tags without changing them",
+         %{conn: conn, owner: owner, document: document} do
+      viewer = register_user()
+      Fixtures.share!(owner, document, viewer, :viewer)
+      {:ok, tag} = Document.add_tag(document.id, owner, "Urgent")
+      {:ok, view, _html} = live(log_in(conn, viewer), ~p"/documents/#{document.id}")
+
+      assert has_element?(view, "#tags-#{tag.id}", "Urgent")
+      refute has_element?(view, "#tags-#{tag.id} button")
+      refute has_element?(view, "#add-tag")
+    end
+
+    test "tags changed on another page show here", %{owner: owner, document: document} do
+      {:ok, other_view, _html} = live(log_in(build_conn(), owner), ~p"/documents/#{document.id}")
+
+      {:ok, tag} = Document.add_tag(document.id, owner, "Urgent")
+
+      assert has_element?(other_view, "#tags-#{tag.id}", "Urgent")
+    end
+  end
+
   describe "import" do
     setup %{conn: conn} do
       user = register_user()

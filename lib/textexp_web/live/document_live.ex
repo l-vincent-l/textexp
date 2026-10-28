@@ -69,10 +69,25 @@ defmodule TextexpWeb.DocumentLive do
                   class="w-full bg-transparent text-2xl font-medium leading-tight tracking-wide outline-none placeholder:text-base-content/30 sm:text-3xl"
                 />
               </.form>
-              <div class="mt-1 flex flex-wrap items-center justify-between gap-2">
-                <p id="last-update" class="text-xs text-base-content/60">
-                  Dernière mise à jour : {Calendar.strftime(@last_update, "%d/%m/%Y %H:%M:%S")} UTC
-                </p>
+              <div class="mt-1 flex items-start justify-between gap-2">
+                <div class="flex min-w-0 flex-col gap-1">
+                  <div class={[
+                    "flex flex-wrap items-center gap-1.5",
+                    (@tag_count == 0 and !@can_edit?) && "hidden"
+                  ]}>
+                    <.tags
+                      tags={@streams.tags}
+                      tag_count={@tag_count}
+                      can_edit?={@can_edit?}
+                      adding_tag?={@adding_tag?}
+                      form={@tag_form}
+                      suggestions={@tag_suggestions}
+                    />
+                  </div>
+                  <p id="last-update" class="text-xs text-base-content/60">
+                    Dernière mise à jour : {Calendar.strftime(@last_update, "%d/%m/%Y %H:%M:%S")} UTC
+                  </p>
+                </div>
                 <%!-- People who have this document open --%>
                 <ul id="viewers" class="flex -space-x-1.5" phx-update="stream">
                   <li
@@ -202,6 +217,86 @@ defmodule TextexpWeb.DocumentLive do
         </div>
       </div>
     </Layouts.app>
+    """
+  end
+
+  attr :tags, :any, required: true
+  attr :tag_count, :integer, required: true
+  attr :can_edit?, :boolean, required: true
+  attr :adding_tag?, :boolean, required: true
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :suggestions, :list, required: true
+
+  # The tags of the document, and for an editor, the button or the field to add
+  # one (Enter adds it, Escape or leaving the field cancels).
+  defp tags(assigns) do
+    ~H"""
+    <ul id="tags" phx-update="stream" class="flex flex-wrap items-center gap-1.5">
+      <li
+        :for={{id, tag} <- @tags}
+        id={id}
+        data-color={tag.color}
+        class="tag badge badge-sm group gap-0.5 border-0 px-1.5 text-[0.6875rem]"
+      >
+        {tag.label}
+        <button
+          :if={@can_edit?}
+          type="button"
+          phx-click="remove_tag"
+          phx-value-id={tag.id}
+          aria-label={"Retirer le tag « #{tag.label} »"}
+          class={[
+            "-mr-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-60 hover:opacity-100",
+            "focus-visible:opacity-100 [@media(hover:none)]:opacity-60"
+          ]}
+        >
+          <.icon name="hero-x-mark-micro" class="size-3" />
+        </button>
+      </li>
+    </ul>
+    <%= if @can_edit? do %>
+      <%= if @adding_tag? do %>
+        <.form
+          for={@form}
+          id="tag-form"
+          phx-submit="add_tag"
+          phx-window-keydown="close_tag_form"
+          phx-key="Escape"
+        >
+          <input
+            id="tag-label"
+            name="label"
+            value={@form[:label].value}
+            list="tag-suggestions"
+            placeholder="Nouveau tag"
+            maxlength="40"
+            autocomplete="off"
+            phx-mounted={JS.focus()}
+            phx-blur="close_tag_form"
+            aria-label="Nouveau tag"
+            class="h-5 w-32 border-b border-base-content/40 bg-transparent px-1 text-[0.6875rem] outline-none placeholder:text-base-content/40 focus:border-base-content"
+          />
+          <datalist id="tag-suggestions">
+            <option :for={label <- @suggestions} value={label}></option>
+          </datalist>
+        </.form>
+      <% else %>
+        <button
+          id="add-tag"
+          type="button"
+          phx-click="open_tag_form"
+          title="Ajouter un tag"
+          class={[
+            "inline-flex h-5 cursor-pointer items-center gap-0.5 px-1 text-[0.6875rem] text-base-content/40",
+            "transition-colors hover:text-base-content"
+          ]}
+        >
+          <.icon name="hero-plus-micro" class="size-3.5" />
+          <span :if={@tag_count == 0}>Ajouter un tag</span>
+          <span :if={@tag_count > 0} class="sr-only">Ajouter un tag</span>
+        </button>
+      <% end %>
+    <% end %>
     """
   end
 
@@ -420,7 +515,19 @@ defmodule TextexpWeb.DocumentLive do
       last_update: document.updated_at,
       title_form: to_form(%{"title" => document.title})
     )
+    |> close_tag_form()
+    |> put_tags(Document.list_tags(document.id))
     |> stream(:viewers, if(connected?(socket), do: viewers(document.id), else: []), reset: true)
+  end
+
+  defp put_tags(socket, tags) do
+    socket
+    |> assign(tag_count: length(tags))
+    |> stream(:tags, tags, reset: true)
+  end
+
+  defp close_tag_form(socket) do
+    assign(socket, adding_tag?: false, tag_form: to_form(%{"label" => ""}), tag_suggestions: [])
   end
 
   defp close_search(%{assigns: %{search_index: nil}} = socket), do: socket
@@ -473,6 +580,15 @@ defmodule TextexpWeb.DocumentLive do
     if document.id == document_id and title != document.title do
       {:noreply,
        socket |> assign(last_update: at) |> put_title(%{document | title: title, updated_at: at})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # Tags added or removed, on this page or another.
+  def handle_info({:document_tags_changed, document_id}, socket) do
+    if socket.assigns.document.id == document_id do
+      {:noreply, put_tags(socket, Document.list_tags(document_id))}
     else
       {:noreply, socket}
     end
@@ -584,6 +700,50 @@ defmodule TextexpWeb.DocumentLive do
       end
 
     {:reply, %{users: users}, socket}
+  end
+
+  # Suggests the tags of the documents the user can read, not already here.
+  def handle_event("open_tag_form", _params, socket) do
+    %{document: document, current_user: user} = socket.assigns
+    here = MapSet.new(Document.list_tags(document.id), & &1.id)
+
+    suggestions =
+      for tag <- Document.visible_tags(user), tag.id not in here, do: tag.label
+
+    {:noreply, assign(socket, adding_tag?: true, tag_suggestions: suggestions)}
+  end
+
+  def handle_event("close_tag_form", _params, socket), do: {:noreply, close_tag_form(socket)}
+
+  # The list is updated by the broadcast (see handle_info/2). The field is
+  # closed: LiveView would not empty it while it has the focus.
+  def handle_event("add_tag", %{"label" => label}, socket) do
+    %{document: document, current_user: user} = socket.assigns
+
+    case Document.add_tag(document.id, user, label) do
+      {:ok, _tag} ->
+        {:noreply, close_tag_form(socket)}
+
+      {:error, :invalid} ->
+        {:noreply, socket}
+
+      {:error, _} ->
+        {:noreply,
+         put_flash(socket, :error, "Vous ne pouvez pas modifier les tags de ce document")}
+    end
+  end
+
+  def handle_event("remove_tag", %{"id" => tag_id}, socket) do
+    %{document: document, current_user: user} = socket.assigns
+
+    case Document.remove_tag(document.id, user, tag_id) do
+      :ok ->
+        {:noreply, socket}
+
+      {:error, _} ->
+        {:noreply,
+         put_flash(socket, :error, "Vous ne pouvez pas modifier les tags de ce document")}
+    end
   end
 
   def handle_event("toggle_share", _params, %{assigns: %{sharing?: true}} = socket),
