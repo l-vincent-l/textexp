@@ -15,6 +15,9 @@ defmodule Textexp.Document.Search do
 
   The last word of a query, which may be being typed, also finds the words it
   starts ("associa" finds "association").
+
+  The ids of the documents' tags are indexed too, so that a search can be
+  limited to the documents carrying a tag before keeping the best matches.
   """
   alias Textexp.Document
   alias Textexp.Document.Snippet
@@ -47,15 +50,16 @@ defmodule Textexp.Document.Search do
   The documents matching `query`, best match first, with in their `snippet`
   the fragment of their body around the words of the query (see
   `Textexp.Document.Snippet.segments/2`), `nil` when only the title matches.
-  An invalid query (e.g. `cats AND (`) matches nothing.
+  An invalid query (e.g. `cats AND (`) matches nothing. With `tag_id`, only
+  among the documents carrying that tag (when the index was built).
   """
-  def search(index, query, user) do
+  def search(index, query, user, tag_id \\ nil) do
     case String.trim(query) do
       "" ->
         []
 
       query ->
-        case search_hits(index, query) do
+        case search_hits(index, query, tag_id) do
           {:ok, hits, snippet} ->
             bodies = Map.new(hits)
 
@@ -82,14 +86,17 @@ defmodule Textexp.Document.Search do
     |> Schema.add_text_field("id", :text_stored)
     |> Schema.add_text_field_with_tokenizer("title", :text, @tokenizer)
     |> Schema.add_text_field_with_tokenizer("body", :text_stored, @tokenizer)
+    # The ids of the tags, separated by spaces: one term each
+    |> Schema.add_text_field_with_tokenizer("tags", :text, "whitespace")
   end
 
   defp add_documents(writer, documents) do
-    Enum.reduce_while(documents, :ok, fn {document, text}, :ok ->
+    Enum.reduce_while(documents, :ok, fn {document, text, tag_ids}, :ok ->
       fields = %{
         "id" => document.id,
         "title" => document.title || "",
-        "body" => text
+        "body" => text,
+        "tags" => Enum.join(tag_ids, " ")
       }
 
       case IndexWriter.add_document(writer, fields) do
@@ -104,8 +111,9 @@ defmodule Textexp.Document.Search do
   # expected: the query is parsed here.
   # The `{id, body}` of the matching documents, best match first, and the
   # function giving the snippet segments of a body for this query.
-  defp search_hits(index, query) do
+  defp search_hits(index, query, tag_id) do
     with {:ok, query} <- parse_query(index, query),
+         {:ok, query} <- filter_by_tag(query, tag_id),
          {:ok, searcher} <- Searcher.new(index),
          {:ok, hits} <- Searcher.search(searcher, query, @limit) do
       snippet = fn body ->
@@ -116,6 +124,14 @@ defmodule Textexp.Document.Search do
       end
 
       {:ok, Enum.map(hits, &{&1["id"], &1["body"] || ""}), snippet}
+    end
+  end
+
+  defp filter_by_tag(query, nil), do: {:ok, query}
+
+  defp filter_by_tag(query, tag_id) do
+    with {:ok, tagged} <- Query.term(schema(), "tags", tag_id) do
+      Query.boolean([query, tagged], [], [])
     end
   end
 

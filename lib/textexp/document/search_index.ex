@@ -17,10 +17,12 @@ defmodule Textexp.Document.SearchIndex do
   def start_link(user), do: GenServer.start_link(__MODULE__, user)
 
   @doc """
-  The documents matching `query`, as `Search.search/3` gives them:
-  `{:ok, documents}`, or `{:error, reason}` when the index could not be built.
+  The documents matching `query`, among those carrying the tag of `tag_id` if
+  given, as `Search.search/4` gives them: `{:ok, documents}`, or
+  `{:error, reason}` when the index could not be built.
   """
-  def search(server, query), do: GenServer.call(server, {:search, query}, :infinity)
+  def search(server, query, tag_id \\ nil),
+    do: GenServer.call(server, {:search, query, tag_id}, :infinity)
 
   @doc """
   Stops the index without waiting for it, even while it is being built: the
@@ -41,9 +43,9 @@ defmodule Textexp.Document.SearchIndex do
     do: {:noreply, %{state | index: Search.new_index(state.user)}}
 
   @impl true
-  def handle_call({:search, query}, _from, %{index: {:ok, index}} = state),
-    do: {:reply, {:ok, Search.search(index, query, state.user)}, state}
+  def handle_call({:search, query, tag_id}, _from, %{index: {:ok, index}} = state),
+    do: {:reply, {:ok, Search.search(index, query, state.user, tag_id)}, state}
 
-  def handle_call({:search, _query}, _from, %{index: {:error, _reason} = error} = state),
+  def handle_call({:search, _query, _tag_id}, _from, %{index: {:error, _reason} = error} = state),
     do: {:reply, error, state}
 end
