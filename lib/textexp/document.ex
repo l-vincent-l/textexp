@@ -18,7 +18,18 @@ defmodule Textexp.Document do
   alias Ecto.Changeset
   alias Textexp.Accounts
   alias Textexp.Accounts.User
-  alias Textexp.Document.{Body, Document, Membership, Policy, Tag, TagDocument, YPersistence}
+
+  alias Textexp.Document.{
+    Body,
+    Document,
+    Membership,
+    Policy,
+    Tag,
+    TagDocument,
+    TagSearch,
+    YPersistence
+  }
+
   alias Textexp.SqliteRepo, as: Repo
 
   # Largest Yjs state an import accepts.
@@ -422,6 +433,42 @@ defmodule Textexp.Document do
     |> limit(8)
     |> Repo.all()
     |> Tag.sort_by_label()
+  end
+
+  @doc """
+  The first `limit` tags `user` can see: those they searched the most (see
+  `record_tag_search/2`), then those on the most documents they can read, then
+  by label.
+  """
+  def top_tags(user, limit) do
+    readable_by(user)
+    |> join(:inner, [document: d], l in TagDocument, as: :link, on: l.document_id == d.id)
+    |> join(:inner, [link: l], t in Tag, as: :tag, on: t.id == l.tag_id)
+    |> join(:left, [tag: t], s in TagSearch,
+      as: :search,
+      on: s.tag_id == t.id and s.user_id == ^user.id
+    )
+    |> group_by([tag: t], t.id)
+    |> order_by([link: l, tag: t, search: s],
+      desc: coalesce(max(s.count), 0),
+      desc: count(l.document_id),
+      asc: t.key
+    )
+    |> limit(^limit)
+    |> select([tag: t], t)
+    |> Repo.all()
+  end
+
+  @doc "Counts a search of the documents of `tag_id` by `user`, for `top_tags/2`."
+  def record_tag_search(user, tag_id) do
+    now = DateTime.utc_now()
+
+    Repo.insert!(%TagSearch{user_id: user.id, tag_id: tag_id, searched_at: now},
+      on_conflict: [inc: [count: 1], set: [searched_at: now]],
+      conflict_target: [:user_id, :tag_id]
+    )
+
+    :ok
   end
 
   defp visible_tags_query(user) do

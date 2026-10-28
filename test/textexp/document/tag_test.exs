@@ -132,4 +132,37 @@ defmodule Textexp.Document.TagTest do
     assert id == shared.id
     refute id == untagged.id
   end
+
+  describe "top_tags/2" do
+    test "has the most searched tags first, then the most used, then by label",
+         %{owner: owner, document: document} do
+      other = Fixtures.create_document!(owner, %{title: "Other"})
+
+      for label <- ["Bleu", "Arbre", "Ciel", "Dune"],
+          do: Document.add_tag(document.id, owner, label)
+
+      {:ok, _} = Document.add_tag(other.id, owner, "Dune")
+      {:ok, ciel} = Document.add_tag(other.id, owner, "Ciel")
+      [bleu] = for t <- Document.list_tags(document.id), t.label == "Bleu", do: t
+
+      Document.record_tag_search(owner, bleu.id)
+      Document.record_tag_search(owner, bleu.id)
+      Document.record_tag_search(owner, ciel.id)
+
+      assert owner |> Document.top_tags(10) |> Enum.map(& &1.label) ==
+               ["Bleu", "Ciel", "Dune", "Arbre"]
+
+      assert owner |> Document.top_tags(2) |> Enum.map(& &1.label) == ["Bleu", "Ciel"]
+    end
+
+    test "only counts the user's own searches", %{owner: owner, document: document} do
+      user = Fixtures.confirmed_user()
+      Fixtures.share!(owner, document, user, :viewer)
+      {:ok, _} = Document.add_tag(document.id, owner, "Arbre")
+      {:ok, bleu} = Document.add_tag(document.id, owner, "Bleu")
+      Document.record_tag_search(owner, bleu.id)
+
+      assert user |> Document.top_tags(10) |> Enum.map(& &1.label) == ["Arbre", "Bleu"]
+    end
+  end
 end

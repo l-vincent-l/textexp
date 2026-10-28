@@ -5,8 +5,9 @@ defmodule TextexpWeb.SearchModal do
   which stops it when the modal closes, freeing the index. Each search runs in
   a task, as it waits for the index while it is being built.
 
-  The tags whose label contains the query are offered under the field. One
-  picked becomes a filter: the results are then the documents carrying it,
+  Under the empty field, the user's 4 most searched tags are offered (see
+  `Textexp.Document.top_tags/2`), and "…" lists all of them, by label. Under a
+  query, the tags whose label contains it. One picked becomes a filter: the results are then the documents carrying it,
   those matching the query if there is one. The LiveView can open the modal
   filtered by a tag (`initial_tag`), picked on the page.
 
@@ -28,11 +29,14 @@ defmodule TextexpWeb.SearchModal do
        loading?: false,
        failed?: false,
        searched?: false,
-       # At most 8 (see Document.search_tags/2)
+       # The tags offered: the most searched ones, all of them (all_tags?), or
+       # those matching the query (at most 8, see Document.search_tags/2)
        tag_suggestions: [],
+       more_tags?: false,
+       all_tags?: false,
        tag: nil,
        tagged_ids: nil,
-       initial_tag_applied?: false
+       initialized?: false
      )
      |> stream(:results, [])}
   end
@@ -43,10 +47,10 @@ defmodule TextexpWeb.SearchModal do
     {tag, assigns} = Map.pop(assigns, :initial_tag)
     socket = assign(socket, assigns)
 
-    if tag && !socket.assigns.initial_tag_applied? do
-      {:ok, socket |> assign(initial_tag_applied?: true) |> put_tag(tag)}
-    else
-      {:ok, socket}
+    cond do
+      socket.assigns.initialized? -> {:ok, socket}
+      tag -> {:ok, socket |> assign(initialized?: true) |> put_tag(tag)}
+      true -> {:ok, socket |> assign(initialized?: true) |> put_top_tags()}
     end
   end
 
@@ -125,7 +129,7 @@ defmodule TextexpWeb.SearchModal do
         <div
           :if={@tag_suggestions != []}
           id="search-tags"
-          class="mt-2 flex flex-wrap items-center gap-1.5"
+          class="mt-2 flex max-h-24 flex-wrap items-center gap-1.5 overflow-y-auto"
         >
           <span class="text-xs text-base-content/60">Tags :</span>
           <button
@@ -142,6 +146,19 @@ defmodule TextexpWeb.SearchModal do
               tag={tag}
               class="transition-[filter] hover:brightness-95 dark:hover:brightness-125"
             />
+          </button>
+          <button
+            :if={@more_tags?}
+            id="search-more-tags"
+            type="button"
+            phx-click={
+              JS.push("show_all_tags", target: @myself) |> JS.focus(to: "#search-modal-query")
+            }
+            title="Tous les tags"
+            aria-label="Afficher tous les tags"
+            class="cursor-pointer px-1 text-xs tracking-widest text-base-content/50 transition-colors hover:text-base-content"
+          >
+            …
           </button>
         </div>
         <%!-- Best match first. ↑ ↓ and Enter in the field select and open them
@@ -203,8 +220,14 @@ defmodule TextexpWeb.SearchModal do
         {:noreply, socket}
 
       tag ->
+        Document.record_tag_search(socket.assigns.user, tag.id)
         {:noreply, socket |> push_event("search:clear", %{}) |> put_tag(tag)}
     end
+  end
+
+  # Kept until the modal closes: an empty field then offers all the tags.
+  def handle_event("show_all_tags", _params, socket) do
+    {:noreply, socket |> assign(all_tags?: true) |> put_top_tags()}
   end
 
   def handle_event("clear_tag", _params, socket) do
@@ -223,9 +246,21 @@ defmodule TextexpWeb.SearchModal do
       tag: tag,
       tagged_ids: MapSet.new(documents, & &1.id),
       form: to_form(%{"query" => ""}, as: "search"),
-      tag_suggestions: []
+      tag_suggestions: [],
+      more_tags?: false
     )
     |> show_results({:ok, documents})
+  end
+
+  # The tags offered under the empty field: the 4 most searched, "…" showing
+  # whether there are others; or all of them, by label.
+  defp put_top_tags(%{assigns: %{all_tags?: true}} = socket) do
+    assign(socket, tag_suggestions: Document.visible_tags(socket.assigns.user), more_tags?: false)
+  end
+
+  defp put_top_tags(socket) do
+    tags = Document.top_tags(socket.assigns.user, 5)
+    assign(socket, tag_suggestions: Enum.take(tags, 4), more_tags?: length(tags) > 4)
   end
 
   defp search(socket, query) do
@@ -235,7 +270,8 @@ defmodule TextexpWeb.SearchModal do
     case String.trim(query) do
       "" when is_nil(tag) ->
         socket
-        |> assign(loading?: false, searched?: false, tag_suggestions: [])
+        |> assign(loading?: false, searched?: false)
+        |> put_top_tags()
         |> stream(:results, [], reset: true)
 
       # Every document carrying the tag
@@ -243,14 +279,18 @@ defmodule TextexpWeb.SearchModal do
         documents = Document.list_documents_tagged(user, tag.id)
 
         socket
-        |> assign(tag_suggestions: [])
+        |> assign(tag_suggestions: [], more_tags?: false)
         |> show_results({:ok, documents})
 
       query ->
         index = socket.assigns.index
 
         socket
-        |> assign(loading?: true, tag_suggestions: tag_suggestions(user, query, tag))
+        |> assign(
+          loading?: true,
+          tag_suggestions: tag_suggestions(user, query, tag),
+          more_tags?: false
+        )
         |> start_async(:search, fn -> {query, SearchIndex.search(index, query)} end)
     end
   end
