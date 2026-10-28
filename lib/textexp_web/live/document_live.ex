@@ -154,13 +154,35 @@ defmodule TextexpWeb.DocumentLive do
                 <.icon name="hero-magnifying-glass" class="size-5" />
               </button>
             </div>
-            <button
-              id="new-document"
-              class="btn btn-sm mb-3 justify-start border-base-content bg-base-100 hover:bg-primary hover:text-primary-content"
-              phx-click="new_document"
-            >
-              <.icon name="hero-plus" class="size-4" /> Nouveau document
-            </button>
+            <div class="mb-3 flex gap-2">
+              <button
+                id="new-document"
+                class="btn btn-sm flex-1 justify-start border-base-content bg-base-100 hover:bg-primary hover:text-primary-content"
+                phx-click="new_document"
+              >
+                <.icon name="hero-plus" class="size-4" /> Nouveau document
+              </button>
+              <%!-- Each file chosen is converted in the browser and sent to the
+                   server (see the DocumentImport hook) --%>
+              <label
+                id="import-document"
+                data-import
+                title="Importer des fichiers (Markdown, HTML ou texte)"
+                class="group btn btn-sm btn-square border-base-content bg-base-100 hover:bg-primary hover:text-primary-content focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-base-content aria-busy:pointer-events-none"
+              >
+                <.icon name="hero-arrow-up-tray" class="size-4 group-aria-busy:hidden" />
+                <span class="loading loading-spinner loading-xs hidden group-aria-busy:inline-block"></span>
+                <span class="sr-only">Importer des fichiers (Markdown, HTML ou texte)</span>
+                <input
+                  id="import-files"
+                  type="file"
+                  multiple
+                  accept=".md,.markdown,.txt,.html,.htm,text/markdown,text/plain,text/html"
+                  phx-hook="DocumentImport"
+                  class="sr-only"
+                />
+              </label>
+            </div>
             <ul id="documents" class="menu w-full p-0" phx-update="stream">
               <li id="documents-empty" class="hidden only:block px-3 py-2 text-sm opacity-60">
                 Aucun document
@@ -499,6 +521,32 @@ defmodule TextexpWeb.DocumentLive do
      socket
      |> stream_insert(:documents, document, at: 0)
      |> push_patch(to: ~p"/documents/#{document.id}")}
+  end
+
+  # A file converted by the DocumentImport hook: its Yjs state, in base64.
+  def handle_event("import_document", %{"name" => name, "state" => state}, socket) do
+    title = name |> Path.rootname() |> String.trim()
+
+    with {:ok, snapshot} <- Base.decode64(state),
+         {:ok, document} <-
+           Document.import_document(socket.assigns.current_user, title, snapshot) do
+      {:reply, %{id: document.id},
+       socket
+       |> stream_insert(:documents, document, at: 0)
+       |> put_flash(:info, "« #{title} » importé")}
+    else
+      _ -> {:reply, %{}, put_flash(socket, :error, "Impossible d'importer « #{name} »")}
+    end
+  end
+
+  def handle_event("import_failed", %{"name" => name, "reason" => reason}, socket) do
+    message =
+      case reason do
+        "too_large" -> "« #{name} » est trop volumineux (2 Mo au plus)"
+        _ -> "Impossible de lire « #{name} »"
+      end
+
+    {:reply, %{}, put_flash(socket, :error, message)}
   end
 
   def handle_event("resolve_users", %{"ids" => ids}, socket) do

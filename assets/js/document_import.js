@@ -1,4 +1,4 @@
-// Hook of the documents page's file input: each chosen file (Markdown, HTML or
+// Hook of the file input of a document's menu: each chosen file (Markdown, HTML or
 // plain text) is converted to a document by BlockNote, in the browser, and its
 // Yjs state sent to the server, which creates the document. One imported file
 // is opened. The BlockNote bundle is only loaded on the first import.

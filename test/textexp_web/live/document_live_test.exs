@@ -335,4 +335,64 @@ defmodule TextexpWeb.DocumentLiveTest do
       refute has_element?(view, "#share-button")
     end
   end
+
+  describe "import" do
+    setup %{conn: conn} do
+      user = register_user()
+      document = Fixtures.create_document!(user, %{title: "Notes"})
+      {:ok, view, _html} = live(log_in(conn, user), ~p"/documents/#{document.id}")
+      %{user: user, view: view}
+    end
+
+    # The Yjs state the DocumentImport hook sends for a file holding `text`.
+    defp import_state(text), do: text |> state() |> Base.encode64()
+
+    test "the sidebar offers a file input to the hook", %{view: view} do
+      assert has_element?(
+               view,
+               "#import-document input#import-files[type=file][phx-hook=DocumentImport]"
+             )
+    end
+
+    test "creates a document from a converted file", %{user: user, view: view} do
+      render_hook(view, "import_document", %{
+        "name" => "Recette des crêpes.md",
+        "state" => import_state("Farine, œufs, lait")
+      })
+
+      assert_reply(view, %{id: id})
+      assert has_element?(view, "#documents-#{id}", "Recette des crêpes")
+
+      document = Document.get_document!(id)
+      assert document.owner_id == user.id
+      assert document.title == "Recette des crêpes"
+      assert Document.markdown(document) == "Farine, œufs, lait"
+    end
+
+    test "reports a file it could not import", %{view: view} do
+      html = render_hook(view, "import_document", %{"name" => "x.md", "state" => "not base64!"})
+      assert_reply(view, %{})
+      assert html =~ "Impossible d&#39;importer « x.md »"
+
+      html = render_hook(view, "import_failed", %{"name" => "big.md", "reason" => "too_large"})
+      assert html =~ "trop volumineux"
+    end
+  end
+
+  # The Yjs state of a BlockNote document holding one paragraph of `text`.
+  defp state(text) do
+    doc = Yex.Doc.new()
+
+    doc
+    |> Yex.Doc.get_xml_fragment("document-store")
+    |> Yex.XmlFragment.push(
+      Yex.XmlElementPrelim.new("blockGroup", [
+        Yex.XmlElementPrelim.new("blockContainer", [
+          Yex.XmlElementPrelim.new("paragraph", [Yex.XmlTextPrelim.from(text)])
+        ])
+      ])
+    )
+
+    Yex.encode_state_as_update!(doc)
+  end
 end
