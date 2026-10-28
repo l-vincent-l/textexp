@@ -36,6 +36,19 @@ defmodule Textexp.Document.SearchIndexTest do
     assert id == statuts.id
   end
 
+  test "finds the words its last word starts", %{user: user} do
+    association = Fixtures.create_document!(user, %{title: "Les statuts de l'association"})
+    {:ok, index} = SearchIndex.start_link(user)
+
+    assert {:ok, [%{id: id}]} = SearchIndex.search(index, "associa")
+    assert id == association.id
+    assert {:ok, [%{id: ^id}]} = SearchIndex.search(index, "l'Associ")
+    # only the last word
+    assert {:ok, []} = SearchIndex.search(index, "assoc tartelette")
+    # a single letter would find too many words
+    assert {:ok, []} = SearchIndex.search(index, "z")
+  end
+
   test "stop/1 ends it at once, without ending its caller", %{user: user} do
     {:ok, index} = SearchIndex.start_link(user)
     ref = Process.monitor(index)

@@ -12,6 +12,9 @@ defmodule Textexp.Document.Search do
   Titles and bodies are analyzed as French: words are reduced to their stem
   ("statut" finds "statuts") and accents are ignored ("ecole" finds "école").
   The snippets mark the words found that way.
+
+  The last word of a query, which may be being typed, also finds the words it
+  starts ("associa" finds "association").
   """
   alias Textexp.Document
   alias Textexp.Document.Snippet
@@ -22,6 +25,8 @@ defmodule Textexp.Document.Search do
   @limit 20
   @snippet_length 200
   @tokenizer "textexp_fr"
+  # Shorter, a word being typed would find too many words
+  @prefix_min_length 2
 
   @doc """
   Builds the index of the documents `user` can read.
@@ -99,12 +104,8 @@ defmodule Textexp.Document.Search do
   # expected: the query is parsed here.
   # The `{id, body}` of the matching documents, best match first, and the
   # function giving the snippet segments of a body for this query.
-  # Apostrophes become spaces: Tantivy reads them as quotes, so that
-  # "l'association" would be a syntax error. The tokenizer splits words there
-  # anyway.
   defp search_hits(index, query) do
-    with {:ok, parser} <- Query.parser(index, ["title", "body"]),
-         {:ok, query} <- Query.parse(parser, String.replace(query, "'", " ")),
+    with {:ok, query} <- parse_query(index, query),
          {:ok, searcher} <- Searcher.new(index),
          {:ok, hits} <- Searcher.search(searcher, query, @limit) do
       snippet = fn body ->
@@ -115,6 +116,44 @@ defmodule Textexp.Document.Search do
       end
 
       {:ok, Enum.map(hits, &{&1["id"], &1["body"] || ""}), snippet}
+    end
+  end
+
+  # The query, or any of the words starting with its last word.
+  # Apostrophes become spaces: Tantivy reads them as quotes, so that
+  # "l'association" would be a syntax error. The tokenizer splits words there
+  # anyway.
+  defp parse_query(index, query) do
+    query = String.replace(query, "'", " ")
+
+    with {:ok, parser} <- Query.parser(index, ["title", "body"]),
+         {:ok, parsed} <- Query.parse(parser, query) do
+      case prefix_queries(query) do
+        [] -> {:ok, parsed}
+        prefixes -> Query.boolean([], [parsed | prefixes], [])
+      end
+    end
+  end
+
+  # The last word, unless it is part of the query syntax (quotes, `field:`,
+  # `-`...). Analyzed like the indexed
+  # words, whose stems it starts ("associa" gives "associ", the stem of
+  # "association"); a word whose stem is not its start is not found that way
+  # ("chevau", "cheval" for "chevaux").
+  defp prefix_queries(query) do
+    word = query |> String.split(~r/\s/u) |> List.last()
+
+    if String.match?(word, ~r/^[\p{L}\p{N}]+$/u) do
+      schema = schema()
+
+      for prefix <- Tokenizer.tokenize_text(@tokenizer, word),
+          String.length(prefix) >= @prefix_min_length,
+          field <- ["title", "body"],
+          {:ok, query} <- [Query.phrase_prefix(schema, field, [prefix])] do
+        query
+      end
+    else
+      []
     end
   end
 
