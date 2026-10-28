@@ -219,8 +219,13 @@ defmodule TextexpWeb.SearchModal do
     documents = Document.list_documents_tagged(socket.assigns.user, tag.id)
 
     socket
-    |> assign(tag: tag, tagged_ids: MapSet.new(documents, & &1.id))
-    |> search("")
+    |> assign(
+      tag: tag,
+      tagged_ids: MapSet.new(documents, & &1.id),
+      form: to_form(%{"query" => ""}, as: "search"),
+      tag_suggestions: []
+    )
+    |> show_results({:ok, documents})
   end
 
   defp search(socket, query) do
