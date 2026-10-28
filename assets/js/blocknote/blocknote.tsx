@@ -105,10 +105,13 @@ export function mountEditor(
   }
 
   const ydoc = new Y.Doc();
+  // Bursts of edits and cursor moves are merged before being sent, so that the
+  // DocServer, which handles the messages one at a time, gets fewer of them.
   const provider = new PhoenixChannelProvider(
     getSocket(),
     `y_doc_room:${documentId}`,
     ydoc,
+    { updateThrottle: 50, awarenessThrottle: 100 },
   );
   const persistence = new IndexeddbPersistence(`document:${documentId}`, ydoc);
   const fragment = ydoc.getXmlFragment("document-store");
