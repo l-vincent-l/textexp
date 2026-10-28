@@ -24,6 +24,7 @@ defmodule Textexp.Document.Document do
     field :snippet, :any, virtual: true
     belongs_to :owner, Textexp.Accounts.User
     has_many :memberships, Textexp.Document.Membership
+    many_to_many :tags, Textexp.Document.Tag, join_through: Textexp.Document.TagDocument
     timestamps(type: :utc_datetime_usec)
   end
 end

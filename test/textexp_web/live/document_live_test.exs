@@ -24,6 +24,7 @@ defmodule TextexpWeb.DocumentLiveTest do
       editor = "#document-editor-#{document.id}[phx-hook='DocumentEditor']"
       assert has_element?(view, "#{editor}[data-document-id='#{document.id}']")
       assert has_element?(view, "#documents-link[href='/documents']")
+      assert has_element?(view, "#search-button")
       assert has_element?(view, "#{editor} [data-skeleton]")
       assert has_element?(view, "#{editor} [data-editor][hidden]")
 
@@ -178,6 +179,20 @@ defmodule TextexpWeb.DocumentLiveTest do
       assert Document.get_document!(document.id).title == "Mon document"
     end
 
+    test "a rename shows on the other pages of the document", %{conn: conn, user: user} do
+      owner = register_user()
+      document = Fixtures.create_document!(owner, %{title: "Notes"})
+      Fixtures.share!(owner, document, user, :viewer)
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+      {:ok, owner_view, _html} = live(log_in(build_conn(), owner), ~p"/documents/#{document.id}")
+
+      owner_view |> element("#title-form") |> render_change(%{"title" => "Mon document"})
+
+      assert has_element?(view, "#document-title[value='Mon document']")
+      assert has_element?(view, "#documents-#{document.id}", "Mon document")
+      assert page_title(view) =~ "Mon document"
+    end
+
     test "a viewer reads the document without editing it", %{conn: conn, user: user} do
       owner = register_user()
       document = Fixtures.create_document!(owner, %{title: "Notes"})
@@ -244,6 +259,45 @@ defmodule TextexpWeb.DocumentLiveTest do
       assert {:error, _} = Document.get_document(document.id, viewer)
     end
 
+    test "the search modal finds documents by their text", %{
+      conn: conn,
+      owner: owner,
+      document: document
+    } do
+      other = Fixtures.create_document!(owner, %{title: "Recette de la tarte"})
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      view |> element("#search-button") |> render_click()
+      assert has_element?(view, "#search-panel[role=dialog]")
+
+      view |> form("#search-modal-form", search: %{query: "tarte"}) |> render_change()
+      # The index is built in the background
+      assert render_async(view, 2_000) =~ "Recette de la tarte"
+      assert has_element?(view, "#search-results a[href='/documents/#{other.id}']")
+
+      # Closing it ends the process holding the index, which frees it
+      index = :sys.get_state(view.pid).socket.assigns.search_index
+      ref = Process.monitor(index)
+
+      view |> element("#search-close") |> render_click()
+      refute has_element?(view, "#search-panel")
+      assert_receive {:DOWN, ^ref, :process, ^index, :shutdown}
+    end
+
+    test "the share modal closes with its button and Escape", %{conn: conn, document: document} do
+      {:ok, view, _html} = live(conn, ~p"/documents/#{document.id}")
+
+      view |> element("#share-button") |> render_click()
+      assert has_element?(view, "#share-modal[class~=modal-open] #share-panel[role=dialog]")
+
+      view |> element("#share-close") |> render_click()
+      refute has_element?(view, "#share-modal")
+
+      view |> element("#share-button") |> render_click()
+      view |> element("#share-modal") |> render_keydown(%{"key" => "Escape"})
+      refute has_element?(view, "#share-modal")
+    end
+
     test "the owner switches a member between viewer and editor",
          %{conn: conn, owner: owner, document: document} do
       member = register_user()
@@ -294,5 +348,288 @@ defmodule TextexpWeb.DocumentLiveTest do
 
       refute has_element?(view, "#share-button")
     end
+  end
+
+  describe "/documents" do
+    setup %{conn: conn} do
+      user = register_user()
+      %{conn: log_in(conn, user), user: user}
+    end
+
+    defp opened_at_documents(conn) do
+      assert {:error, {_redirect, %{to: "/documents/" <> id}}} = live(conn, ~p"/documents")
+      id
+    end
+
+    test "opens the document opened last", %{conn: conn, user: user} do
+      first = Fixtures.create_document!(user, %{title: "First"})
+      _last_updated = Fixtures.create_document!(user, %{title: "Last updated"})
+      {:ok, _view, _html} = live(conn, ~p"/documents/#{first.id}")
+
+      assert opened_at_documents(conn) == first.id
+    end
+
+    test "without one, opens the document updated last", %{conn: conn, user: user} do
+      older = Fixtures.create_document!(user, %{title: "Older"})
+      _newer = Fixtures.create_document!(user, %{title: "Newer"})
+      Document.save_snapshot(older.id, nil, "edited")
+
+      assert opened_at_documents(conn) == older.id
+    end
+
+    test "skips a document opened last that can no longer be read", %{conn: conn, user: user} do
+      owner = register_user()
+      shared = Fixtures.create_document!(owner, %{title: "Shared"})
+      membership = Fixtures.share!(owner, shared, user, :viewer)
+      own = Fixtures.create_document!(user, %{title: "Mine"})
+      {:ok, view, _html} = live(conn, ~p"/documents/#{shared.id}")
+      :ok = Document.remove_member(owner, membership.id)
+      assert_redirect(view, ~p"/documents")
+
+      assert opened_at_documents(conn) == own.id
+    end
+
+    test "without any document, creates one", %{conn: conn, user: user} do
+      id = opened_at_documents(conn)
+
+      assert %{owner_id: owner_id, title: nil} = Document.get_document!(id)
+      assert owner_id == user.id
+    end
+
+    test "the sidebar lists the documents the user owns or is a member of",
+         %{conn: conn, user: user} do
+      other = register_user()
+      own = Fixtures.create_document!(user, %{title: "Mine"})
+      shared = Fixtures.create_document!(other, %{title: "Shared"})
+      Fixtures.share!(other, shared, user, :viewer)
+      hidden = Fixtures.create_document!(other, %{title: "Hidden"})
+
+      {:ok, view, _html} = live(conn, ~p"/documents/#{own.id}")
+
+      assert has_element?(view, "#documents-#{own.id}")
+      assert has_element?(view, "#documents-#{shared.id}")
+      refute has_element?(view, "#documents-#{hidden.id}")
+    end
+  end
+
+  describe "tags" do
+    setup %{conn: conn} do
+      owner = register_user()
+      document = Fixtures.create_document!(owner, %{title: "Notes"})
+      {:ok, view, _html} = live(log_in(conn, owner), ~p"/documents/#{document.id}")
+      %{owner: owner, document: document, view: view}
+    end
+
+    defp add_tag(view, label) do
+      view |> element("#add-tag") |> render_click()
+      view |> form("#tag-form", %{"label" => label}) |> render_submit()
+    end
+
+    test "an editor adds a tag", %{document: document, view: view} do
+      add_tag(view, "Urgent")
+
+      assert [%{id: id, label: "Urgent"}] = Document.list_tags(document.id)
+      assert has_element?(view, "#tags-#{id}", "Urgent")
+      refute has_element?(view, "#tag-form")
+    end
+
+    test "the field suggests the tags of the user's other documents",
+         %{owner: owner, document: document, view: view} do
+      other = Fixtures.create_document!(owner, %{title: "Other"})
+      {:ok, _} = Document.add_tag(other.id, owner, "Recettes")
+      {:ok, _} = Document.add_tag(document.id, owner, "Urgent")
+
+      view |> element("#add-tag") |> render_click()
+
+      assert has_element?(view, "#tag-suggestions option[value='Recettes']")
+      refute has_element?(view, "#tag-suggestions option[value='Urgent']")
+    end
+
+    test "an editor removes a tag", %{owner: owner, document: document, view: view} do
+      {:ok, tag} = Document.add_tag(document.id, owner, "Urgent")
+      assert has_element?(view, "#tags-#{tag.id}")
+
+      view |> element("#tags-#{tag.id} button[phx-click=remove_tag]") |> render_click()
+
+      assert Document.list_tags(document.id) == []
+      refute has_element?(view, "#tags-#{tag.id}")
+    end
+
+    test "a tag opens the search on the documents carrying it",
+         %{owner: owner, document: document, view: view} do
+      other = Fixtures.create_document!(owner, %{title: "Autre"})
+      untagged = Fixtures.create_document!(owner, %{title: "Sans tag"})
+      {:ok, tag} = Document.add_tag(document.id, owner, "Recettes")
+      {:ok, _} = Document.add_tag(other.id, owner, "Recettes")
+
+      view |> element("#tags-#{tag.id} button[phx-click=search_tag]") |> render_click()
+
+      assert has_element?(view, "#search-panel #search-active-tag", "Recettes")
+      assert has_element?(view, "#search-results a[href='/documents/#{document.id}']")
+      assert has_element?(view, "#search-results a[href='/documents/#{other.id}']")
+      refute has_element?(view, "#search-results a[href='/documents/#{untagged.id}']")
+    end
+
+    test "a viewer sees the tags without changing them",
+         %{conn: conn, owner: owner, document: document} do
+      viewer = register_user()
+      Fixtures.share!(owner, document, viewer, :viewer)
+      {:ok, tag} = Document.add_tag(document.id, owner, "Urgent")
+      {:ok, view, _html} = live(log_in(conn, viewer), ~p"/documents/#{document.id}")
+
+      assert has_element?(view, "#tags-#{tag.id}", "Urgent")
+      refute has_element?(view, "#tags-#{tag.id} button[phx-click=remove_tag]")
+      refute has_element?(view, "#add-tag")
+    end
+
+    test "tags changed on another page show here", %{owner: owner, document: document} do
+      {:ok, other_view, _html} = live(log_in(build_conn(), owner), ~p"/documents/#{document.id}")
+
+      {:ok, tag} = Document.add_tag(document.id, owner, "Urgent")
+
+      assert has_element?(other_view, "#tags-#{tag.id}", "Urgent")
+    end
+  end
+
+  describe "import" do
+    setup %{conn: conn} do
+      user = register_user()
+      document = Fixtures.create_document!(user, %{title: "Notes"})
+      {:ok, view, _html} = live(log_in(conn, user), ~p"/documents/#{document.id}")
+      %{user: user, view: view}
+    end
+
+    # The Yjs state the DocumentImport hook sends for a file holding `text`.
+    defp import_state(text), do: text |> state() |> Base.encode64()
+
+    test "the sidebar offers a file input to the hook", %{view: view} do
+      assert has_element?(
+               view,
+               "#import-document input#import-files[type=file][phx-hook=DocumentImport]"
+             )
+    end
+
+    test "creates a document from a converted file", %{user: user, view: view} do
+      render_hook(view, "import_document", %{
+        "name" => "Recette des crêpes.md",
+        "state" => import_state("Farine, œufs, lait")
+      })
+
+      assert_reply(view, %{id: id})
+      assert has_element?(view, "#documents-#{id}", "Recette des crêpes")
+
+      document = Document.get_document!(id)
+      assert document.owner_id == user.id
+      assert document.title == "Recette des crêpes"
+      assert Document.markdown(document) == "Farine, œufs, lait"
+    end
+
+    test "reports a file it could not import", %{view: view} do
+      html = render_hook(view, "import_document", %{"name" => "x.md", "state" => "not base64!"})
+      assert_reply(view, %{})
+      assert html =~ "Impossible d&#39;importer « x.md »"
+
+      html = render_hook(view, "import_failed", %{"name" => "big.md", "reason" => "too_large"})
+      assert html =~ "trop volumineux"
+    end
+  end
+
+  describe "search modal" do
+    setup %{conn: conn} do
+      user = register_user()
+      document = Fixtures.create_document!(user, %{title: "Notes"})
+      {:ok, view, _html} = live(log_in(conn, user), ~p"/documents/#{document.id}")
+      %{user: user, view: view}
+    end
+
+    # Opens the modal, which indexes the documents as they are then, and searches.
+    defp search(view, query) do
+      view |> element("#search-button") |> render_click()
+      view |> form("#search-modal-form", search: %{query: query}) |> render_change()
+      # Searches run in the background, the first one waiting for the index
+      render_async(view, 2_000)
+    end
+
+    test "results show where the words appear in the body", %{user: user, view: view} do
+      document = Fixtures.create_document!(user, %{title: "Chez moi"})
+      Document.save_snapshot(document.id, state("Le chat dort"), "Le chat dort")
+
+      search(view, "chat")
+
+      assert has_element?(view, "#search-results [role=option] p mark", "chat")
+    end
+
+    test "ignores the documents the user cannot read", %{user: user, view: view} do
+      own = Fixtures.create_document!(user, %{title: "Mes chats"})
+      hidden = Fixtures.create_document!(register_user(), %{title: "Leurs chats"})
+
+      search(view, "chats")
+
+      assert has_element?(view, "#search-results a[href='/documents/#{own.id}']")
+      refute has_element?(view, "#search-results a[href='/documents/#{hidden.id}']")
+    end
+
+    test "a picked tag filters the results", %{user: user, view: view} do
+      tagged = Fixtures.create_document!(user, %{title: "Crêpes"})
+      other = Fixtures.create_document!(user, %{title: "Gaufres"})
+      stranger = register_user()
+      hidden = Fixtures.create_document!(stranger, %{title: "Leur recette"})
+      {:ok, tag} = Document.add_tag(tagged.id, user, "Recettes")
+      {:ok, _} = Document.add_tag(hidden.id, stranger, "Recettes cachées")
+
+      search(view, "rec")
+      assert has_element?(view, "#search-tag-#{tag.id}", "Recettes")
+      refute has_element?(view, "#search-tags", "cachées")
+
+      view |> element("#search-tag-#{tag.id}") |> render_click()
+
+      assert has_element?(view, "#search-active-tag", "Recettes")
+      refute has_element?(view, "#search-tags")
+      assert has_element?(view, "#search-results a[href='/documents/#{tagged.id}']")
+      refute has_element?(view, "#search-results a[href='/documents/#{other.id}']")
+
+      view |> element("#search-clear-tag") |> render_click()
+
+      refute has_element?(view, "#search-active-tag")
+      refute has_element?(view, "#search-results [role=option]")
+    end
+
+    test "with a tag picked, a query searches the documents carrying it",
+         %{user: user, view: view} do
+      tagged = Fixtures.create_document!(user, %{title: "Crêpes au sucre"})
+      other = Fixtures.create_document!(user, %{title: "Gaufres au sucre"})
+      {:ok, tag} = Document.add_tag(tagged.id, user, "Recettes")
+
+      search(view, "rec")
+      view |> element("#search-tag-#{tag.id}") |> render_click()
+      view |> form("#search-modal-form", search: %{query: "sucre"}) |> render_change()
+      render_async(view, 2_000)
+
+      assert has_element?(view, "#search-results a[href='/documents/#{tagged.id}']")
+      refute has_element?(view, "#search-results a[href='/documents/#{other.id}']")
+    end
+
+    test "a search without match shows that nothing was found", %{view: view} do
+      search(view, "chats AND (")
+
+      assert has_element?(view, "#search-results-empty", "Aucun résultat")
+    end
+  end
+
+  # The Yjs state of a BlockNote document holding one paragraph of `text`.
+  defp state(text) do
+    doc = Yex.Doc.new()
+
+    doc
+    |> Yex.Doc.get_xml_fragment("document-store")
+    |> Yex.XmlFragment.push(
+      Yex.XmlElementPrelim.new("blockGroup", [
+        Yex.XmlElementPrelim.new("blockContainer", [
+          Yex.XmlElementPrelim.new("paragraph", [Yex.XmlTextPrelim.from(text)])
+        ])
+      ])
+    )
+
+    Yex.encode_state_as_update!(doc)
   end
 end

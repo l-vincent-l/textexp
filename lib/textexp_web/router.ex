@@ -22,7 +22,7 @@ defmodule TextexpWeb.Router do
 
     # Each LiveView requires a signed-in user (see LiveUserAuth).
     live_session :authenticated_routes, on_mount: [{TextexpWeb.LiveUserAuth, :current_user}] do
-      live "/documents", DocumentListLive, :index
+      live "/documents", DocumentLive, :index
       live "/documents/:id", DocumentLive, :show
     end
   end

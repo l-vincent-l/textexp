@@ -26,12 +26,13 @@ import {hooks as colocatedHooks} from "phoenix-colocated/textexp"
 import topbar from "../vendor/topbar"
 import {DocumentEditor} from "./document_editor"
 import {DocumentImport} from "./document_import"
+import {SearchNav} from "./search_nav"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, DocumentEditor, DocumentImport},
+  hooks: {...colocatedHooks, DocumentEditor, DocumentImport, SearchNav},
 })
 
 // Firefox closes the websocket as soon as a full page navigation starts

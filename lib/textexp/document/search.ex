@@ -3,8 +3,9 @@ defmodule Textexp.Document.Search do
   Full-text search in the documents' titles and bodies.
 
   The index is built in memory from the documents the user can read
-  (`new_index/1`), and kept by its user (a LiveView) for as long as it
-  searches; it is freed along with it. It does not follow later changes to the
+  (`new_index/1`), and kept for as long as the user searches by a
+  `Textexp.Document.SearchIndex` process (the document list page, the search
+  modal). Being native memory, it is freed when that process ends. It does not follow later changes to the
   documents. It stores the text of the bodies, to cut the snippets of the
   results from them.
   """

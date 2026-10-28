@@ -1,36 +1,59 @@
 defmodule TextexpWeb.DocumentLive do
   use TextexpWeb, :live_view
 
+  import TextexpWeb.DocumentComponents, only: [tag_badge: 1]
+
   alias Textexp.Accounts
   alias Textexp.Document
-  alias Textexp.Document.{Policy, YPersistence}
+  alias Textexp.Document.{Policy, SearchIndex, YPersistence}
   alias TextexpWeb.Presence
 
   on_mount {TextexpWeb.LiveUserAuth, :live_user_required}
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_user={@current_user} full_width>
+    <Layouts.app flash={@flash} current_user={@current_user} full_width sidebar>
       <link phx-track-static rel="stylesheet" href={~p"/assets/js/blocknote.css"} />
-      <div class="drawer lg:drawer-open min-h-[calc(100vh-4rem)]">
+      <div class="drawer lg:drawer-open min-h-dvh">
         <input id="sidebar-drawer" type="checkbox" class="drawer-toggle" />
 
         <div class="drawer-content flex flex-col">
-          <%!-- Open button: only visible on small screens --%>
-          <div class="p-2 lg:hidden">
+          <%!-- The menu's open button (small screens only), and sharing on the right,
+               above the title --%>
+          <div class={[
+            "flex min-h-12 items-center justify-between px-2 pt-2 lg:px-[54px] lg:pt-4",
+            !@can_share? && "lg:hidden"
+          ]}>
             <label
               id="sidebar-open"
               for="sidebar-drawer"
               aria-label="Ouvrir le menu"
-              class="btn btn-square btn-ghost drawer-button"
+              class="btn btn-square btn-ghost drawer-button lg:hidden"
             >
               <.icon name="hero-bars-3" class="size-5" />
             </label>
+            <button
+              :if={@can_share?}
+              id="share-button"
+              type="button"
+              phx-click="toggle_share"
+              aria-expanded={to_string(@sharing?)}
+              aria-controls="share-panel"
+              class={[
+                "btn btn-sm ml-auto border-base-content px-4",
+                if(@sharing?,
+                  do: "btn-primary",
+                  else: "bg-base-100 hover:bg-primary hover:text-primary-content"
+                )
+              ]}
+            >
+              <.icon name="hero-user-plus" class="size-4" /> Partager
+            </button>
           </div>
 
-          <%!-- The title shares the background, font and margins of the BlockNote editor (light theme) --%>
-          <div class="flex flex-1 flex-col bg-white font-['Inter',sans-serif] text-[#3f3f3f]">
-            <div class="document-header px-[54px] pt-12 pb-2">
+          <%!-- The title shares the margins of the BlockNote editor, which takes the theme's colors and font (see blocknote.css) --%>
+          <div class="flex flex-1 flex-col">
+            <div class="document-header px-[54px] pt-1">
               <.form
                 for={@title_form}
                 id="title-form"
@@ -45,58 +68,61 @@ defmodule TextexpWeb.DocumentLive do
                   phx-debounce="300"
                   autocomplete="off"
                   readonly={!@can_edit?}
-                  class="w-full bg-transparent text-4xl font-bold leading-tight outline-none placeholder:text-[#cfcfcf]"
+                  class="w-full bg-transparent text-2xl font-medium leading-tight tracking-wide outline-none placeholder:text-base-content/30 sm:text-3xl"
                 />
               </.form>
-              <div class="mt-1 flex flex-wrap items-center justify-between gap-2">
-                <p id="last-update" class="text-sm text-[#9b9b9b]">
-                  Dernière mise à jour : {Calendar.strftime(@last_update, "%d/%m/%Y %H:%M:%S")} UTC
-                </p>
-                <div class="flex items-center gap-3">
-                  <%!-- People who have this document open --%>
-                  <ul id="viewers" class="flex -space-x-2" phx-update="stream">
-                    <li
-                      :for={{id, viewer} <- @streams.viewers}
-                      id={id}
-                      title={viewer.email}
-                      class={[
-                        "flex size-8 items-center justify-center rounded-full text-xs font-semibold uppercase",
-                        "ring-2 ring-white transition-transform duration-150 hover:z-10 hover:-translate-y-0.5",
-                        if(viewer.id == @current_user.id,
-                          do: "bg-[#3f3f3f] text-white",
-                          else: "bg-[#ececec] text-[#3f3f3f]"
-                        )
-                      ]}
-                    >
-                      {String.first(to_string(viewer.email))}
-                    </li>
-                  </ul>
-                  <button
-                    :if={@can_share?}
-                    id="share-button"
-                    type="button"
-                    phx-click="toggle_share"
-                    aria-expanded={to_string(@sharing?)}
-                    aria-controls="share-panel"
+              <div class="mt-1 flex items-start justify-between gap-2">
+                <div class="flex min-w-0 flex-col gap-1">
+                  <div class={[
+                    "flex flex-wrap items-center gap-1.5",
+                    (@tag_count == 0 and !@can_edit?) && "hidden"
+                  ]}>
+                    <.tags
+                      tags={@streams.tags}
+                      tag_count={@tag_count}
+                      can_edit?={@can_edit?}
+                      adding_tag?={@adding_tag?}
+                      form={@tag_form}
+                      suggestions={@tag_suggestions}
+                    />
+                  </div>
+                  <p id="last-update" class="text-xs text-base-content/60">
+                    Dernière mise à jour : {Calendar.strftime(@last_update, "%d/%m/%Y %H:%M:%S")} UTC
+                  </p>
+                </div>
+                <%!-- People who have this document open --%>
+                <ul id="viewers" class="flex -space-x-1.5" phx-update="stream">
+                  <li
+                    :for={{id, viewer} <- @streams.viewers}
+                    id={id}
+                    title={viewer.email}
                     class={[
-                      "btn btn-sm rounded-full border-[#e3e3e3] px-4 font-medium shadow-none",
-                      "transition-colors duration-150",
-                      if(@sharing?,
-                        do: "bg-[#3f3f3f] text-white hover:bg-[#2b2b2b]",
-                        else: "bg-white text-[#3f3f3f] hover:bg-[#f4f4f4]"
+                      "flex size-6 items-center justify-center border-2 border-base-content text-[0.625rem] font-medium uppercase",
+                      "transition-transform duration-150 hover:z-10 hover:-translate-y-0.5",
+                      if(viewer.id == @current_user.id,
+                        do: "bg-primary text-primary-content",
+                        else: "bg-base-300 text-base-content"
                       )
                     ]}
                   >
-                    <.icon name="hero-user-plus" class="size-4" /> Partager
-                  </button>
-                </div>
+                    {String.first(to_string(viewer.email))}
+                  </li>
+                </ul>
               </div>
+              <.live_component
+                :if={@search_open?}
+                module={TextexpWeb.SearchModal}
+                id="search-modal"
+                index={@search_index}
+                user={@current_user}
+                initial_tag={@search_tag}
+              />
               <.share_panel
                 :if={@sharing?}
                 form={@share_form}
                 members={@streams.members}
               />
-              <div class="divider"></div>
+              <hr class="mt-3 mb-1 border-t-2 border-dotted border-base-content/40" />
             </div>
             <%!-- Managed by the DocumentEditor hook: LiveView must not touch it. Its
                    id changes with the document so that LiveView replaces it, and the
@@ -105,7 +131,7 @@ defmodule TextexpWeb.DocumentLive do
                    move the previous editor's nodes into the new element. --%>
             <div
               id={"document-editor-#{@document.id}"}
-              class="flex-1 w-full"
+              class={["flex-1 w-full pb-16", @can_edit? && "cursor-text"]}
               phx-hook="DocumentEditor"
               phx-update="ignore"
               data-document-id={@document.id}
@@ -117,14 +143,14 @@ defmodule TextexpWeb.DocumentLive do
                 data-skeleton
                 role="status"
                 aria-label="Chargement du document"
-                class="flex flex-col gap-3 px-[54px] py-1 motion-safe:animate-pulse"
+                class="flex flex-col gap-3 px-[54px] py-4 motion-safe:animate-pulse"
               >
-                <div class="h-4 w-3/4 rounded bg-[#ececec]"></div>
-                <div class="h-4 w-full rounded bg-[#ececec]"></div>
-                <div class="h-4 w-5/6 rounded bg-[#ececec]"></div>
-                <div class="h-4 w-2/5 rounded bg-[#ececec]"></div>
-                <div class="mt-4 h-4 w-11/12 rounded bg-[#ececec]"></div>
-                <div class="h-4 w-2/3 rounded bg-[#ececec]"></div>
+                <div class="h-4 w-3/4 bg-base-300"></div>
+                <div class="h-4 w-full bg-base-300"></div>
+                <div class="h-4 w-5/6 bg-base-300"></div>
+                <div class="h-4 w-2/5 bg-base-300"></div>
+                <div class="mt-4 h-4 w-11/12 bg-base-300"></div>
+                <div class="h-4 w-2/3 bg-base-300"></div>
               </div>
               <div data-editor hidden></div>
             </div>
@@ -133,14 +159,49 @@ defmodule TextexpWeb.DocumentLive do
 
         <div class="drawer-side z-20">
           <label for="sidebar-drawer" aria-label="Fermer le menu" class="drawer-overlay"></label>
-          <div class="flex min-h-full w-64 flex-col bg-base-200 p-4">
-            <button
-              id="new-document"
-              class="btn btn-ghost btn-sm mb-2 justify-start"
-              phx-click="new_document"
-            >
-              <.icon name="hero-plus" class="size-4" /> Nouveau document
-            </button>
+          <div class="flex min-h-full w-64 flex-col border-r border-base-content/20 bg-base-100 p-4">
+            <div class="mb-3 flex items-center justify-between">
+              <Layouts.logo class="px-1" />
+              <button
+                id="search-button"
+                type="button"
+                phx-click="open_search"
+                aria-label="Rechercher"
+                title="Rechercher"
+                class="btn btn-ghost btn-sm btn-square"
+              >
+                <.icon name="hero-magnifying-glass" class="size-5" />
+              </button>
+            </div>
+            <div class="mb-3 flex gap-2">
+              <button
+                id="new-document"
+                class="btn btn-sm flex-1 justify-start border-base-content bg-base-100 hover:bg-primary hover:text-primary-content"
+                phx-click="new_document"
+              >
+                <.icon name="hero-plus" class="size-4" /> Nouveau document
+              </button>
+              <%!-- Each file chosen is converted in the browser and sent to the
+                   server (see the DocumentImport hook) --%>
+              <label
+                id="import-document"
+                data-import
+                title="Importer des fichiers (Markdown, HTML ou texte)"
+                class="group btn btn-sm btn-square border-base-content bg-base-100 hover:bg-primary hover:text-primary-content focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-base-content aria-busy:pointer-events-none"
+              >
+                <.icon name="hero-arrow-up-tray" class="size-4 group-aria-busy:hidden" />
+                <span class="loading loading-spinner loading-xs hidden group-aria-busy:inline-block"></span>
+                <span class="sr-only">Importer des fichiers (Markdown, HTML ou texte)</span>
+                <input
+                  id="import-files"
+                  type="file"
+                  multiple
+                  accept=".md,.markdown,.txt,.html,.htm,text/markdown,text/plain,text/html"
+                  phx-hook="DocumentImport"
+                  class="sr-only"
+                />
+              </label>
+            </div>
             <ul id="documents" class="menu w-full p-0" phx-update="stream">
               <li id="documents-empty" class="hidden only:block px-3 py-2 text-sm opacity-60">
                 Aucun document
@@ -155,6 +216,7 @@ defmodule TextexpWeb.DocumentLive do
                 </.link>
               </li>
             </ul>
+            <Layouts.account current_user={@current_user} />
           </div>
         </div>
       </div>
@@ -162,102 +224,220 @@ defmodule TextexpWeb.DocumentLive do
     """
   end
 
+  attr :tags, :any, required: true
+  attr :tag_count, :integer, required: true
+  attr :can_edit?, :boolean, required: true
+  attr :adding_tag?, :boolean, required: true
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :suggestions, :list, required: true
+
+  # The tags of the document, and for an editor, the button or the field to add
+  # one (Enter adds it, Escape or leaving the field cancels).
+  defp tags(assigns) do
+    ~H"""
+    <ul id="tags" phx-update="stream" class="flex flex-wrap items-center gap-1.5">
+      <li :for={{id, tag} <- @tags} id={id} class="flex">
+        <.tag_badge tag={tag} class="group">
+          <:label>
+            <button
+              type="button"
+              phx-click="search_tag"
+              phx-value-id={tag.id}
+              title={"Documents avec le tag « #{tag.label} »"}
+              class="cursor-pointer decoration-dotted underline-offset-2 hover:underline"
+            >
+              {tag.label}
+            </button>
+          </:label>
+          <button
+            :if={@can_edit?}
+            type="button"
+            phx-click="remove_tag"
+            phx-value-id={tag.id}
+            aria-label={"Retirer le tag « #{tag.label} »"}
+            class={[
+              "-mr-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-60 hover:opacity-100",
+              "focus-visible:opacity-100 [@media(hover:none)]:opacity-60"
+            ]}
+          >
+            <.icon name="hero-x-mark-micro" class="size-3" />
+          </button>
+        </.tag_badge>
+      </li>
+    </ul>
+    <%= if @can_edit? do %>
+      <%= if @adding_tag? do %>
+        <.form
+          for={@form}
+          id="tag-form"
+          phx-submit="add_tag"
+          phx-window-keydown="close_tag_form"
+          phx-key="Escape"
+        >
+          <input
+            id="tag-label"
+            name="label"
+            value={@form[:label].value}
+            list="tag-suggestions"
+            placeholder="Nouveau tag"
+            maxlength="40"
+            autocomplete="off"
+            phx-mounted={JS.focus()}
+            phx-blur="close_tag_form"
+            aria-label="Nouveau tag"
+            class="h-5 w-32 border-b border-base-content/40 bg-transparent px-1 text-[0.6875rem] outline-none placeholder:text-base-content/40 focus:border-base-content"
+          />
+          <datalist id="tag-suggestions">
+            <option :for={label <- @suggestions} value={label}></option>
+          </datalist>
+        </.form>
+      <% else %>
+        <button
+          id="add-tag"
+          type="button"
+          phx-click="open_tag_form"
+          title="Ajouter un tag"
+          class={[
+            "inline-flex h-5 cursor-pointer items-center gap-0.5 px-1 text-[0.6875rem] text-base-content/40",
+            "transition-colors hover:text-base-content"
+          ]}
+        >
+          <.icon name="hero-plus-micro" class="size-3.5" />
+          <span :if={@tag_count == 0}>Ajouter un tag</span>
+          <span :if={@tag_count > 0} class="sr-only">Ajouter un tag</span>
+        </button>
+      <% end %>
+    <% end %>
+    """
+  end
+
   attr :form, Phoenix.HTML.Form, required: true
   attr :members, :any, required: true
 
-  # Invites an address as viewer or editor, and lists the members.
+  # A modal that invites an address as viewer or editor, and lists the members.
+  # Closed by its button, a click outside or Escape.
   defp share_panel(assigns) do
     ~H"""
-    <section
-      id="share-panel"
-      class="mt-4 rounded-2xl border border-[#ececec] bg-[#fafafa] p-4 sm:p-5"
-    >
-      <h2 class="text-sm font-semibold text-[#3f3f3f]">Partager ce document</h2>
-      <p class="mt-0.5 text-xs text-[#9b9b9b]">
-        La personne doit déjà avoir un compte.
-      </p>
-      <.form
-        for={@form}
-        id="share-form"
-        phx-submit="share"
-        class="mt-3 flex flex-wrap items-start gap-2"
+    <div id="share-modal" class="modal modal-open" phx-window-keydown="close_share" phx-key="Escape">
+      <section
+        id="share-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-title"
+        phx-mounted={JS.focus(to: "#share_email")}
+        class="modal-box w-11/12 max-w-2xl border-2 border-base-content bg-base-100 p-5 shadow-hard sm:p-6"
       >
-        <div class="min-w-56 flex-1">
-          <.input
-            field={@form[:email]}
-            type="email"
-            placeholder="adresse@exemple.fr"
-            autocomplete="off"
-            required
-          />
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="share-title" class="text-sm uppercase">Partager ce document</h2>
+            <p class="mt-0.5 text-xs text-base-content/60">
+              La personne doit déjà avoir un compte.
+            </p>
+          </div>
+          <button
+            id="share-close"
+            type="button"
+            phx-click="close_share"
+            aria-label="Fermer"
+            class="btn btn-ghost btn-sm btn-square -mt-1 -mr-2"
+          >
+            <.icon name="hero-x-mark" class="size-5" />
+          </button>
         </div>
-        <.input
-          field={@form[:role]}
-          type="select"
-          options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
-          class="select w-32"
-        />
-        <button
-          id="share-submit"
-          class="btn btn-neutral transition-transform duration-150 active:scale-95"
-          phx-disable-with="Invitation…"
+        <.form
+          for={@form}
+          id="share-form"
+          phx-submit="share"
+          class="mt-3 flex flex-wrap items-start gap-2"
         >
-          Inviter
-        </button>
-      </.form>
-      <ul id="members" phx-update="stream" class="mt-2 divide-y divide-[#ececec]">
-        <li id="members-empty" class="hidden py-2 text-sm text-[#9b9b9b] only:block">
-          Pas encore partagé.
-        </li>
-        <li
-          :for={{id, member} <- @members}
-          id={id}
-          class="group flex items-center justify-between gap-3 py-2 text-sm"
+          <div class="min-w-56 flex-1">
+            <.input
+              field={@form[:email]}
+              type="email"
+              placeholder="adresse@exemple.fr"
+              autocomplete="off"
+              required
+            />
+          </div>
+          <.input
+            field={@form[:role]}
+            type="select"
+            options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
+            class="select w-32"
+          />
+          <button
+            id="share-submit"
+            class="btn btn-primary"
+            phx-disable-with="Invitation…"
+          >
+            Inviter
+          </button>
+        </.form>
+        <ul
+          id="members"
+          phx-update="stream"
+          class="mt-2 divide-y-2 divide-dotted divide-base-content/30"
         >
-          <span class="flex min-w-0 items-center gap-2">
-            <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#ececec] text-xs font-semibold uppercase">
-              {String.first(member.email)}
+          <li id="members-empty" class="hidden py-2 text-sm text-base-content/60 only:block">
+            Pas encore partagé.
+          </li>
+          <li
+            :for={{id, member} <- @members}
+            id={id}
+            class="group flex items-center justify-between gap-3 py-2 text-sm"
+          >
+            <span class="flex min-w-0 items-center gap-2">
+              <span class="flex size-7 shrink-0 items-center justify-center border-2 border-base-content bg-base-300 text-xs font-medium uppercase">
+                {String.first(member.email)}
+              </span>
+              <span class="truncate">{member.email}</span>
             </span>
-            <span class="truncate">{member.email}</span>
-          </span>
-          <span class="flex shrink-0 items-center gap-1">
-            <.form
-              :let={f}
-              for={role_form(member)}
-              id={"role-#{member.id}"}
-              phx-change="change_role"
-              class="[&_.fieldset]:m-0 [&_.fieldset]:p-0"
-            >
-              <.input field={f[:membership_id]} type="hidden" />
-              <.input
-                field={f[:role]}
-                type="select"
-                options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
-                aria-label={"Rôle de #{member.email}"}
-                class={[
-                  "select select-xs w-24 rounded-full border-0 font-medium",
-                  if(member.role == :editor,
-                    do: "bg-[#e8f0fe] text-[#1a56db]",
-                    else: "bg-[#ececec] text-[#6b6b6b]"
-                  )
-                ]}
-              />
-            </.form>
-            <button
-              id={"remove-#{member.id}"}
-              type="button"
-              phx-click="remove_member"
-              phx-value-id={member.id}
-              data-confirm={"Retirer l'accès de #{member.email} ?"}
-              aria-label={"Retirer #{member.email}"}
-              class="btn btn-ghost btn-xs btn-square opacity-60 transition-opacity hover:opacity-100"
-            >
-              <.icon name="hero-x-mark" class="size-4" />
-            </button>
-          </span>
-        </li>
-      </ul>
-    </section>
+            <span class="flex shrink-0 items-center gap-1">
+              <.form
+                :let={f}
+                for={role_form(member)}
+                id={"role-#{member.id}"}
+                phx-change="change_role"
+                class="[&_.fieldset]:m-0 [&_.fieldset]:p-0"
+              >
+                <.input field={f[:membership_id]} type="hidden" />
+                <.input
+                  field={f[:role]}
+                  type="select"
+                  options={[{"Lecteur", "viewer"}, {"Éditeur", "editor"}]}
+                  aria-label={"Rôle de #{member.email}"}
+                  class={[
+                    "select select-xs w-24 border-base-content",
+                    if(member.role == :editor,
+                      do: "bg-primary text-primary-content",
+                      else: "bg-base-100 text-base-content"
+                    )
+                  ]}
+                />
+              </.form>
+              <button
+                id={"remove-#{member.id}"}
+                type="button"
+                phx-click="remove_member"
+                phx-value-id={member.id}
+                data-confirm={"Retirer l'accès de #{member.email} ?"}
+                aria-label={"Retirer #{member.email}"}
+                class="btn btn-ghost btn-xs btn-square opacity-60 transition-opacity hover:opacity-100"
+              >
+                <.icon name="hero-x-mark" class="size-4" />
+              </button>
+            </span>
+          </li>
+        </ul>
+      </section>
+      <button
+        type="button"
+        class="modal-backdrop"
+        phx-click="close_share"
+        aria-label="Fermer"
+        tabindex="-1"
+      ></button>
+    </div>
     """
   end
 
@@ -275,11 +455,28 @@ defmodule TextexpWeb.DocumentLive do
        can_edit?: false,
        can_share?: false,
        sharing?: false,
+       search_open?: false,
+       search_index: nil,
+       search_tag: nil,
        share_form: nil
      )
      |> stream(:viewers, [])
      |> stream(:members, [])
      |> stream(:documents, documents)}
+  end
+
+  # /documents opens the document the user opened last, else the one they
+  # updated last, else a new one (deleted if left empty, see YPersistence).
+  def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
+    user = socket.assigns.current_user
+
+    document =
+      with nil <- Document.last_opened(user) do
+        {:ok, document} = Document.create_document(user)
+        document
+      end
+
+    {:noreply, push_patch(socket, to: ~p"/documents/#{document.id}", replace: true)}
   end
 
   # Going from one document to another is a live patch: the same process
@@ -314,11 +511,13 @@ defmodule TextexpWeb.DocumentLive do
       Phoenix.PubSub.subscribe(Textexp.PubSub, Document.members_topic(document.id))
 
       user = socket.assigns.current_user
+      Document.opened(user, document)
       Presence.subscribe(viewers_topic(document.id))
       Presence.track_user(viewers_topic(document.id), user.id, %{id: user.id, email: user.email})
     end
 
     socket
+    |> close_search()
     |> assign(
       document: document,
       can_edit?: Policy.can?(document.role, :write),
@@ -328,7 +527,32 @@ defmodule TextexpWeb.DocumentLive do
       last_update: document.updated_at,
       title_form: to_form(%{"title" => document.title})
     )
+    |> close_tag_form()
+    |> put_tags(Document.list_tags(document.id))
     |> stream(:viewers, if(connected?(socket), do: viewers(document.id), else: []), reset: true)
+  end
+
+  defp put_tags(socket, tags) do
+    socket
+    |> assign(tag_count: length(tags))
+    |> stream(:tags, tags, reset: true)
+  end
+
+  defp close_tag_form(socket) do
+    assign(socket, adding_tag?: false, tag_form: to_form(%{"label" => ""}), tag_suggestions: [])
+  end
+
+  defp open_search(socket, tag) do
+    socket = close_search(socket)
+    {:ok, index} = SearchIndex.start_link(socket.assigns.current_user)
+    assign(socket, search_open?: true, search_index: index, search_tag: tag)
+  end
+
+  defp close_search(%{assigns: %{search_index: nil}} = socket), do: socket
+
+  defp close_search(socket) do
+    SearchIndex.stop(socket.assigns.search_index)
+    assign(socket, search_open?: false, search_index: nil, search_tag: nil)
   end
 
   defp leave_document(%{assigns: %{document: nil}} = socket), do: socket
@@ -361,6 +585,28 @@ defmodule TextexpWeb.DocumentLive do
   def handle_info({:document_updated, document_id, at, title}, socket) do
     if socket.assigns.document.id == document_id do
       {:noreply, socket |> assign(last_update: at) |> put_saved_title(title)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # Renamed on another page (or this one, then already shown). The input keeps
+  # what this user is typing: LiveView does not patch a focused input.
+  def handle_info({:document_renamed, document_id, title, at}, socket) do
+    document = socket.assigns.document
+
+    if document.id == document_id and title != document.title do
+      {:noreply,
+       socket |> assign(last_update: at) |> put_title(%{document | title: title, updated_at: at})}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # Tags added or removed, on this page or another.
+  def handle_info({:document_tags_changed, document_id}, socket) do
+    if socket.assigns.document.id == document_id do
+      {:noreply, put_tags(socket, Document.list_tags(document_id))}
     else
       {:noreply, socket}
     end
@@ -439,6 +685,32 @@ defmodule TextexpWeb.DocumentLive do
      |> push_patch(to: ~p"/documents/#{document.id}")}
   end
 
+  # A file converted by the DocumentImport hook: its Yjs state, in base64.
+  def handle_event("import_document", %{"name" => name, "state" => state}, socket) do
+    title = name |> Path.rootname() |> String.trim()
+
+    with {:ok, snapshot} <- Base.decode64(state),
+         {:ok, document} <-
+           Document.import_document(socket.assigns.current_user, title, snapshot) do
+      {:reply, %{id: document.id},
+       socket
+       |> stream_insert(:documents, document, at: 0)
+       |> put_flash(:info, "« #{title} » importé")}
+    else
+      _ -> {:reply, %{}, put_flash(socket, :error, "Impossible d'importer « #{name} »")}
+    end
+  end
+
+  def handle_event("import_failed", %{"name" => name, "reason" => reason}, socket) do
+    message =
+      case reason do
+        "too_large" -> "« #{name} » est trop volumineux (2 Mo au plus)"
+        _ -> "Impossible de lire « #{name} »"
+      end
+
+    {:reply, %{}, put_flash(socket, :error, message)}
+  end
+
   def handle_event("resolve_users", %{"ids" => ids}, socket) do
     users =
       for user <- Accounts.list_users_by_ids(ids) do
@@ -448,8 +720,68 @@ defmodule TextexpWeb.DocumentLive do
     {:reply, %{users: users}, socket}
   end
 
+  # Suggests the tags of the documents the user can read, not already here.
+  def handle_event("open_tag_form", _params, socket) do
+    %{document: document, current_user: user} = socket.assigns
+    here = MapSet.new(Document.list_tags(document.id), & &1.id)
+
+    suggestions =
+      for tag <- Document.visible_tags(user), tag.id not in here, do: tag.label
+
+    {:noreply, assign(socket, adding_tag?: true, tag_suggestions: suggestions)}
+  end
+
+  def handle_event("close_tag_form", _params, socket), do: {:noreply, close_tag_form(socket)}
+
+  # The list is updated by the broadcast (see handle_info/2). The field is
+  # closed: LiveView would not empty it while it has the focus.
+  def handle_event("add_tag", %{"label" => label}, socket) do
+    %{document: document, current_user: user} = socket.assigns
+
+    case Document.add_tag(document.id, user, label) do
+      {:ok, _tag} ->
+        {:noreply, close_tag_form(socket)}
+
+      {:error, :invalid} ->
+        {:noreply, socket}
+
+      {:error, _} ->
+        {:noreply,
+         put_flash(socket, :error, "Vous ne pouvez pas modifier les tags de ce document")}
+    end
+  end
+
+  def handle_event("remove_tag", %{"id" => tag_id}, socket) do
+    %{document: document, current_user: user} = socket.assigns
+
+    case Document.remove_tag(document.id, user, tag_id) do
+      :ok ->
+        {:noreply, socket}
+
+      {:error, _} ->
+        {:noreply,
+         put_flash(socket, :error, "Vous ne pouvez pas modifier les tags de ce document")}
+    end
+  end
+
   def handle_event("toggle_share", _params, %{assigns: %{sharing?: true}} = socket),
     do: {:noreply, assign(socket, sharing?: false)}
+
+  def handle_event("close_share", _params, socket),
+    do: {:noreply, assign(socket, sharing?: false)}
+
+  # The search modal's index lives while it is open (see SearchModal).
+  def handle_event("open_search", _params, socket), do: {:noreply, open_search(socket, nil)}
+
+  # A tag of the document: the search opens on the documents carrying it.
+  def handle_event("search_tag", %{"id" => id}, socket) do
+    case Enum.find(Document.list_tags(socket.assigns.document.id), &(&1.id == id)) do
+      nil -> {:noreply, socket}
+      tag -> {:noreply, open_search(socket, tag)}
+    end
+  end
+
+  def handle_event("close_search", _params, socket), do: {:noreply, close_search(socket)}
 
   def handle_event("toggle_share", _params, socket) do
     {:noreply,

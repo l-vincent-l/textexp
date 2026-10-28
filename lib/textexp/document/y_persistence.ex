@@ -37,7 +37,8 @@ defmodule Textexp.Document.YPersistence do
   @doc """
   PubSub topic on which `{:document_updated, document_id, at, title}` is
   broadcast each time the document is saved; saving gives a title to a
-  document that has none.
+  document that has none. Renames and changes of tags are broadcast there
+  too (see `Textexp.Document.rename_document/3` and `add_tag/3`).
   """
   def topic(document_id), do: "document:#{document_id}"
 

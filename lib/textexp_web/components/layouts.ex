@@ -37,46 +37,29 @@ defmodule TextexpWeb.Layouts do
     default: false,
     doc: "when true, the content spans the whole page instead of a centered column"
 
+  attr :sidebar, :boolean,
+    default: false,
+    doc:
+      "when true, the page has no header: its sidebar holds the logo (`logo/1`) and the account controls (`account/1`)"
+
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
+    <header
+      :if={!@sidebar}
+      class="navbar h-14 min-h-14 border-b-2 border-base-content px-4 sm:px-6 lg:px-8"
+    >
       <div class="flex-1">
-        <.link
-          id="documents-link"
-          navigate={~p"/documents"}
-          class="group flex w-fit items-center gap-2 rounded-lg px-1 py-1 transition-colors duration-150 hover:bg-base-200"
-        >
-          <span class="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary transition-transform duration-150 group-hover:scale-105">
-            <.icon name="hero-document-text" class="size-5" />
-          </span>
-          <span class="text-sm font-semibold tracking-tight">textexp</span>
-        </.link>
+        <.logo />
       </div>
       <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
+        <ul class="flex items-center gap-4 text-sm">
+          <li :if={@current_user} class="hidden sm:block">
+            {@current_user.email}
+          </li>
           <li>
-            <%= if @current_user do %>
-              <span class="px-3 py-2 text-sm font-medium rounded-md">
-                {@current_user.email}
-              </span>
-              <.link
-                href={~p"/sign-out"}
-                method="delete"
-                id="sign-out"
-                class="rounded-lg bg-zinc-100 px-2 py-1 text-[0.8125rem] font-semibold leading-6 text-zinc-900 hover:bg-zinc-200/80 active:text-zinc-900/70"
-              >
-                Sign out
-              </.link>
-            <% else %>
-              <a
-                href="/sign-in"
-                class="rounded-lg bg-zinc-100 px-2 py-1 text-[0.8125rem] font-semibold leading-6 text-zinc-900 hover:bg-zinc-200/80 active:text-zinc-900/70"
-              >
-                Sign In
-              </a>
-            <% end %>
+            <.sign_out_link current_user={@current_user} />
           </li>
           <li>
             <.theme_toggle />
@@ -96,6 +79,53 @@ defmodule TextexpWeb.Layouts do
     </main>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  @doc "The site's name, linking to the documents."
+  attr :class, :any, default: nil
+
+  def logo(assigns) do
+    ~H"""
+    <.link
+      id="documents-link"
+      navigate={~p"/documents"}
+      class={[
+        "font-pixel text-base uppercase tracking-wide no-underline hover:underline hover:decoration-dotted",
+        @class
+      ]}
+    >
+      textexp
+    </.link>
+    """
+  end
+
+  @doc """
+  The account controls at the bottom of a page's sidebar: the user's email,
+  signing out, the theme. See the `sidebar` attribute of `app/1`.
+  """
+  attr :current_user, :map, required: true
+
+  def account(assigns) do
+    ~H"""
+    <div id="account" class="mt-auto border-t-2 border-dotted border-base-content/40 pt-4 text-sm">
+      <p class="truncate" title={@current_user.email}>{@current_user.email}</p>
+      <div class="mt-2 flex items-center justify-between gap-2">
+        <.sign_out_link current_user={@current_user} />
+        <.theme_toggle />
+      </div>
+    </div>
+    """
+  end
+
+  attr :current_user, :map, default: nil
+
+  defp sign_out_link(assigns) do
+    ~H"""
+    <.link :if={@current_user} href={~p"/sign-out"} method="delete" id="sign-out" class="link">
+      Sign out
+    </.link>
+    <.link :if={!@current_user} href={~p"/sign-in"} class="link">Sign in</.link>
     """
   end
 
@@ -155,31 +185,34 @@ defmodule TextexpWeb.Layouts do
   """
   def theme_toggle(assigns) do
     ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 [[data-theme-source=system]_&]:!left-0 transition-[left]" />
+    <div class="relative flex flex-row items-center border-2 border-base-content">
+      <div class="absolute h-full w-1/3 bg-base-300 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 [[data-theme-source=system]_&]:!left-0 transition-[left]" />
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="relative flex w-1/3 cursor-pointer p-1.5"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="system"
+        aria-label="Thème du système"
       >
-        <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-computer-desktop-micro" class="size-4" />
       </button>
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="relative flex w-1/3 cursor-pointer p-1.5"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="light"
+        aria-label="Thème clair"
       >
-        <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-sun-micro" class="size-4" />
       </button>
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="relative flex w-1/3 cursor-pointer p-1.5"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="dark"
+        aria-label="Thème sombre"
       >
-        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name="hero-moon-micro" class="size-4" />
       </button>
     </div>
     """
