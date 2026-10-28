@@ -78,7 +78,10 @@ function Editor({
       extensions: [CommentsExtension({ threadStore, resolveUsers })],
     }),
   );
-  React.useEffect(() => onReady(editor), [editor]);
+  // In braces: what an effect returns is called by React as its cleanup.
+  React.useEffect(() => {
+    onReady(editor);
+  }, [editor]);
 
   return <BlockNoteView editor={editor} editable={editable} theme="light" />;
 }
@@ -170,12 +173,18 @@ export function mountEditor(
     />,
   );
 
+  // The document's channel and sync are torn down even if React fails to
+  // unmount: otherwise they would keep running in the background, one more
+  // for each document opened.
   return () => {
     el.removeEventListener("mousedown", editAtEnd);
-    root.unmount();
-    // leaves the document's channel, which stops tracking us as a viewer
-    provider.destroy();
-    persistence.destroy();
-    ydoc.destroy();
+    try {
+      root.unmount();
+    } finally {
+      // leaves the document's channel, which stops tracking us as a viewer
+      provider.destroy();
+      persistence.destroy();
+      ydoc.destroy();
+    }
   };
 }
