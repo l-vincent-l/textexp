@@ -37,7 +37,7 @@ defmodule Textexp.Document.Search do
   def new_index(user) do
     documents = Document.list_documents_with_text(user)
 
-    with {:ok, _} <- register_tokenizer(),
+    with :ok <- register_tokenizer(),
          {:ok, index} <- Index.create_in_ram(schema()),
          {:ok, writer} <- IndexWriter.new(index, @writer_memory_budget),
          :ok <- add_documents(writer, documents),
