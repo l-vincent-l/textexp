@@ -4,11 +4,14 @@ name: Bunny image
 # (DATABASE_ADAPTER=hrana), and pushes it to ghcr.io, tagged with the commit
 # and `latest`. Deploying it to the Magic Container is done by hand, on Bunny.
 #
-# Run by hand: Actions > Bunny image > Run workflow, or
-# `gh workflow run bunny-image.yml`.
+# Run on every push to main (a merged pull request), or by hand: Actions >
+# Bunny image > Run workflow, or `gh workflow run bunny-image.yml`.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
+# One build at a time, in order: `latest` ends up on the last commit.
 concurrency:
   group: bunny-image
   cancel-in-progress: false
